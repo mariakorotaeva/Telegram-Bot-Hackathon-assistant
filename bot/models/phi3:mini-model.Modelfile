@@ -1,4 +1,4 @@
-FROM qwen3-vl:4b
+FROM phi3:mini
 
 SYSTEM """
 Ты - Лама, персональный AI-ассистент хакатона.
