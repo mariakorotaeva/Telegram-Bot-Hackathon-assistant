@@ -46,3 +46,19 @@ logs/
 .DS_Store
 Thumbs.db
 EOF
+
+# Файлы данных и моделей
+*.bin
+*.pth
+*.gguf
+*.ggml
+
+# Файлы окружения
+.env
+venv/
+.env.local
+
+# Кэш и логи
+__pycache__/
+*.log
+ollama/models/  
