@@ -1,0 +1,50 @@
+{
+  "hackathon_info": {
+    "name": "AI Challenge 2024",
+    "date": "15-17 декабря 2024",
+    "location": "Онлайн",
+    "website": "hackathon-ai.ru"
+  },
+  
+  "organizing_committee": [
+    {
+      "name": "Алексей Иванов",
+      "role": "Главный организатор",
+      "contacts": {
+        "email": "alexey@hackathon-ai.ru",
+        "telegram": "@alexey_org"
+      }
+    },
+    {
+      "name": "Мария Смирнова", 
+      "role": "Координатор",
+      "contacts": {
+        "email": "maria@hackathon-ai.ru",
+        "telegram": "@maria_support"
+      }
+    }
+  ],
+  
+  "jury": [
+    {
+      "name": "Михаил Соколов",
+      "role": "Председатель жюри",
+      "company": "ТехноИнновации"
+    }
+  ],
+  
+  "mentors": [
+    {
+      "name": "Павел Белов",
+      "role": "Технический ментор",
+      "company": "Microsoft",
+      "expertise": ["Cloud", "AI"]
+    }
+  ],
+  
+  "contacts": {
+    "general": "info@hackathon-ai.ru",
+    "support": "support@hackathon-ai.ru",
+    "emergency": "+7 (999) 123-45-67"
+  }
+}
