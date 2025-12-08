@@ -55,7 +55,7 @@ async def cmd_start_handler(message: Message, state: FSMContext) -> None:
         user_data = temp_users_storage[user_id]
         await message.answer(
             f"Приветик, {user_data['full_name']}!\n"
-            "Ты уже зарегистрирован)"
+            "Ты уже зарегистрирован(a))"
         )
     else:
         await state.set_state(RegistrationStates.waiting_for_name)
