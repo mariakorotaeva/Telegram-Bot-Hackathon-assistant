@@ -114,13 +114,51 @@ async def notifications_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "participant_faq")
 async def show_faq(callback: CallbackQuery):
+    from bot.services.faq_service import faq_service
+    categories = faq_service.get_categories()
+   
+    if not categories:
+        await callback.message.edit_text(
+            "📚 FAQ временно недоступен. Попробуйте позже.",
+            reply_markup=back_to_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        await callback.answer()
+        return
+    builder = InlineKeyboardBuilder()
+   
+    category_names = {
+        "general": "📋 Общие вопросы",
+        "registration": "📝 Регистрация",
+        "technical": "⚙️ Технические вопросы"
+    }
+   
+    for category in categories:
+        button_text = category_names.get(category, category.capitalize())
+        builder.button(
+            text=button_text,
+            callback_data=f"faq_category:{category}"
+        )
+   
+    builder.button(
+        text="📚 Все вопросы",
+        callback_data="faq_all"
+    )
+   
+    builder.button(
+        text="⬅️ Назад в меню",
+        callback_data="back_to_menu"
+    )
+    builder.adjust(1)
+   
     await callback.message.edit_text(
-        "❓ <b>Часто задаваемые вопросы</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
+        "📚 <b>Часто задаваемые вопросы</b>\n\n"
+        "Выберите категорию:",
+        reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
     await callback.answer()
+
 
 @router.callback_query(F.data == "participant_team_search")
 async def team_search(callback: CallbackQuery):
