@@ -4,28 +4,28 @@
 Соответствует требованиям из документации.
 """
 
-# 1. Импортируем необходимые типы из SQLAlchemy
 from sqlalchemy import String, Boolean, DateTime, Enum as SQLEnum, Text, ARRAY, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
-import enum  # Для создания перечислений (фиксированных наборов значений)
-from typing import Optional, List  # Для указания типов (Optional = может быть None)
+import enum
+from typing import Optional, List
 
-# 2. Импортируем наш базовый класс
 from config.database import Base
 
 
-# 3. СОЗДАЁМ ПЕРЕЧИСЛЕНИЯ (ENUMS) - фиксированные наборы значений
+# ============================================
+# ПЕРЕЧИСЛЕНИЯ (ENUMS) - фиксированные наборы значений
+# ============================================
 
 class UserRole(str, enum.Enum):
     """
-    Роли пользователей в системе хакатона.
-    Используем str в качестве базового типа для удобства работы с API.
+    Роли пользователей в системе.
+    Используем str в качестве базового типа для удобства сериализации.
     """
-    PARTICIPANT = "participant"  # Участник хакатона (основная роль)
-    ORGANIZER = "organizer"  # Организатор (может управлять ботом)
-    MENTOR = "mentor"  # Ментор (помогает командам)
-    VOLUNTEER = "volunteer"  # Волонтёр (помощник организаторов)
+    PARTICIPANT = "participant"  # Участник хакатона
+    ORGANIZER = "organizer"  # Организатор
+    MENTOR = "mentor"  # Ментор
+    VOLUNTEER = "volunteer"  # Волонтёр
 
 
 class ParticipantStatus(str, enum.Enum):
@@ -38,7 +38,9 @@ class ParticipantStatus(str, enum.Enum):
     NOT_LOOKING = "not_looking"  # Не ищет команду (например, хочет работать один)
 
 
-# 4. СОЗДАЁМ МОДЕЛЬ ПОЛЬЗОВАТЕЛЯ
+# ============================================
+# МОДЕЛЬ ПОЛЬЗОВАТЕЛЯ (ТАБЛИЦА users)
+# ============================================
 
 class User(Base):
     """
@@ -46,7 +48,7 @@ class User(Base):
     Каждый объект этого класса = одна строка в таблице 'users'.
     """
 
-    # Указываем имя таблицы в базе данных
+    # Имя таблицы в базе данных
     __tablename__ = "users"
 
     # ==================== ОСНОВНЫЕ ДАННЫЕ ====================
@@ -108,9 +110,13 @@ class User(Base):
         default=ParticipantStatus.LOOKING_FOR_TEAM  # По умолчанию ищет команду
     )
 
-    # Внешний ключ на команду (если пользователь в команде)
-    # Пока оставляем закомментированным, создадим позже
-    # team_id: Mapped[Optional[int]] = mapped_column(ForeignKey("teams.id"))
+    # ==================== ВНЕШНИЕ КЛЮЧИ ====================
+
+    # ID команды, в которой состоит пользователь (если есть)
+    # Ссылается на таблицу teams, поле id
+    team_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL")
+    )
 
     # ==================== НАСТРОЙКИ И МЕТАДАННЫЕ ====================
 
@@ -122,6 +128,31 @@ class User(Base):
 
     # Дата и время регистрации (автоматически при создании)
     registered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # ==================== СВЯЗИ (RELATIONSHIPS) ====================
+
+    # Команда, в которой состоит пользователь
+    team: Mapped[Optional["Team"]] = relationship(
+        "Team",
+        back_populates="members"
+    )
+
+    # Все заявки, которые подавал пользователь
+    team_applications: Mapped[List["TeamApplication"]] = relationship(
+        "TeamApplication",
+        back_populates="user",
+        cascade="all, delete-orphan"  # при удалении пользователя удаляются его заявки
+    )
+
+    # Все уведомления пользователя
+    notifications: Mapped[List["Notification"]] = relationship(
+        "Notification",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+    # Команды, где пользователь является капитаном
+    # (обратная ссылка из Team.captain)
 
     # ==================== МЕТОДЫ ДЛЯ УДОБСТВА ====================
 
@@ -159,6 +190,7 @@ class User(Base):
 
             # Статус
             "participant_status": self.participant_status.value if self.participant_status else None,
+            "team_id": self.team_id,
 
             # Метаданные
             "timezone": self.timezone,
@@ -170,13 +202,90 @@ class User(Base):
         """Проверяет, ищет ли пользователь команду."""
         return self.participant_status == ParticipantStatus.LOOKING_FOR_TEAM
 
+    def is_in_team(self) -> bool:
+        """Проверяет, состоит ли пользователь в команде."""
+        return self.participant_status == ParticipantStatus.IN_TEAM
+
+    def has_team(self) -> bool:
+        """Проверяет, есть ли у пользователя команда (по team_id)."""
+        return self.team_id is not None
+
     def join_team(self, team_id: int) -> None:
         """Добавляет пользователя в команду."""
-        # Пока просто меняем статус, связь добавим позже
         self.participant_status = ParticipantStatus.IN_TEAM
-        # self.team_id = team_id  # Раскомментируем, когда создадим модель Team
+        self.team_id = team_id
 
     def leave_team(self) -> None:
         """Удаляет пользователя из команды."""
         self.participant_status = ParticipantStatus.LOOKING_FOR_TEAM
-        # self.team_id = None  # Раскомментируем, когда создадим модель Team
+        self.team_id = None
+
+    def update_skills(self, new_skills: List[str]) -> None:
+        """Обновляет список навыков пользователя."""
+        self.skills = new_skills
+
+    def add_skill(self, skill: str) -> None:
+        """Добавляет навык в список."""
+        if not self.skills:
+            self.skills = []
+        if skill not in self.skills:
+            self.skills.append(skill)
+
+    def update_interests(self, new_interests: List[str]) -> None:
+        """Обновляет список интересов пользователя."""
+        self.interests = new_interests
+
+    def add_interest(self, interest: str) -> None:
+        """Добавляет интерес в список."""
+        if not self.interests:
+            self.interests = []
+        if interest not in self.interests:
+            self.interests.append(interest)
+
+    def get_profile_summary(self) -> str:
+        """Возвращает краткое описание профиля."""
+        summary = f"{self.full_name}"
+
+        if self.desired_role:
+            summary += f" | {self.desired_role}"
+
+        if self.skills:
+            summary += f"\nНавыки: {', '.join(self.skills[:3])}"
+            if len(self.skills) > 3:
+                summary += f" и ещё {len(self.skills) - 3}"
+
+        if self.bio and len(self.bio) > 0:
+            bio_preview = self.bio[:100] + "..." if len(self.bio) > 100 else self.bio
+            summary += f"\n\n{bio_preview}"
+
+        return summary
+
+    @classmethod
+    def create_participant(cls, telegram_id: int, full_name: str, username: Optional[str] = None) -> "User":
+        """
+        Создаёт нового участника (фабричный метод).
+
+        Args:
+            telegram_id: ID пользователя в Telegram
+            full_name: Полное имя
+            username: Имя пользователя в Telegram (опционально)
+
+        Returns:
+            Новый объект User с ролью PARTICIPANT
+        """
+        return cls(
+            telegram_id=telegram_id,
+            username=username,
+            full_name=full_name,
+            role=UserRole.PARTICIPANT
+        )
+
+    @classmethod
+    def create_organizer(cls, telegram_id: int, full_name: str, username: Optional[str] = None) -> "User":
+        """Создаёт нового организатора."""
+        return cls(
+            telegram_id=telegram_id,
+            username=username,
+            full_name=full_name,
+            role=UserRole.ORGANIZER
+        )
