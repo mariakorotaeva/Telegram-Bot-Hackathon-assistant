@@ -1,67 +1,53 @@
-"""
-Тестирование интеграции хакатон-ассистента
-"""
+from ollama_handler import HackathonAssistant
 
-import sys
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+print("🧪 Тестирование HackathonAssistant...")
 
-from ollama_handler import OllamaHackathonHandler
-from config import Config
+# Создаем экземпляр
+handler = HackathonAssistant()
 
-def test_model():
-    print("🧪 Тестирование интеграции хакатон-ассистента")
-    print("=" * 50)
+# 1. Тестируем подключение
+print("\n🔗 Проверка подключения к модели...")
+if handler.test_connection():
+    print("✅ Подключение успешно!")
+else:
+    print("❌ Не удалось подключиться к модели")
+    print("Убедитесь что:")
+    print("1. Ollama установлен: https://ollama.com/")
+    print("2. Модель загружена: ollama pull hackathon-assistant")
+    print("3. Ollama сервер запущен: ollama serve")
+    exit(1)
+
+# 2. Получаем информацию о модели
+print("\n📊 Информация о модели...")
+model_info = handler.get_model_info()
+if model_info:
+    print(f"✅ Модель: {model_info.get('name', 'N/A')}")
+    print(f"📦 Размер: {model_info.get('size', 'N/A')}")
+    print(f"🕐 Изменена: {model_info.get('modified', 'N/A')}")
+else:
+    print("⚠️ Не удалось получить информацию о модели")
+
+# 3. Тестовый запрос
+print("\n🧠 Тестовый запрос к модели...")
+try:
+    import asyncio
     
-    # Проверка конфигурации
-    errors = Config.validate()
-    if errors:
-        print("❌ Ошибки конфигурации:")
-        for error in errors:
-            print(f"   - {error}")
-        return
-    
-    # Инициализация обработчика
-    print("🔄 Инициализация обработчика...")
-    handler = OllamaHackathonHandler()
-    
-    # Проверка статуса Ollama
-    print("\n🔍 Проверка статуса Ollama...")
-    status = handler.check_ollama_status()
-    
-    print(f"   Сервер: {status.get('server', 'N/A')}")
-    print(f"   Статус: {status.get('status', 'unknown')}")
-    print(f"   Модель: {status.get('model', 'N/A')}")
-    print(f"   Доступна: {'✅' if status.get('model_available') else '❌'}")
-    
-    if status.get('status') != 'running' or not status.get('model_available'):
-        print("\n❌ Ollama не готова!")
-        print("   Запустите: ollama serve")
-        print("   Убедитесь, что модель создана: ollama create hackathon-assistant -f Modelfile")
-        return
-    
-    # Тестовые вопросы
-    print("\n🤖 Тестовые вопросы к модели:")
-    print("-" * 50)
-    
-    test_questions = [
-        "Когда начинается хакатон?",
-        "Как зарегистрироваться?",
-        "Какое расписание?",
-        "Какая погода завтра?",
-        "Какие требования к команде?"
-    ]
-    
-    for i, question in enumerate(test_questions, 1):
-        print(f"\n{i}. Вопрос: {question}")
-        print("-" * 30)
+    # Запускаем асинхронный запрос
+    async def test_question():
+        result = await handler.ask("Когда начало хакатона?")
         
-        response = handler.generate_response(question)
-        print(f"Ответ: {response[:150]}...")
+        if result['success']:
+            print(f"✅ Ответ получен!")
+            print(f"🤖 Модель: {result['model']}")
+            print(f"⏱️ Время ответа: {result['response_time']}")
+            print(f"📅 Ответ: {result['answer'][:200]}...")
+        else:
+            print(f"❌ Ошибка: {result.get('error', 'Unknown error')}")
+            print(f"💬 Ответ: {result['answer']}")
     
-    print("\n" + "=" * 50)
-    print("✅ Интеграция готова к использованию!")
-    print("\nДля запуска бота выполните: python bot.py")
+    asyncio.run(test_question())
+    
+except Exception as e:
+    print(f"❌ Ошибка при тестовом запросе: {e}")
 
-if __name__ == "__main__":
-    test_model()
+print("\n🎯 Тестирование завершено!")
