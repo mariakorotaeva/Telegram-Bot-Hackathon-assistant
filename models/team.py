@@ -157,3 +157,24 @@ class Team(Base):
         back_populates="team",
         cascade="all, delete-orphan"  # при удалении команды удаляются её заявки
     )
+
+    captain: Mapped["User"] = relationship(
+            "User",
+            foreign_keys=[captain_id],  # ← ВАЖНО!
+            back_populates="captained_teams"
+    )
+
+    # Участники команды (обратная ссылка из User.team)
+    members: Mapped[List["User"]] = relationship(
+            "User",
+            back_populates="team",
+            foreign_keys="[User.team_id]"  # ← ВАЖНО!
+    )
+
+    # Заявки в команду
+    applications: Mapped[List["TeamApplication"]] = relationship(
+            "TeamApplication",
+            back_populates="team",
+            cascade="all, delete-orphan",
+            foreign_keys="[TeamApplication.team_id]"  # ← ВАЖНО!
+    )

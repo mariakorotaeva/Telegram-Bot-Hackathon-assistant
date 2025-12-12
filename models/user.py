@@ -144,12 +144,7 @@ class User(Base):
         cascade="all, delete-orphan"  # при удалении пользователя удаляются его заявки
     )
 
-    # Все уведомления пользователя
-    notifications: Mapped[List["Notification"]] = relationship(
-        "Notification",
-        back_populates="user",
-        cascade="all, delete-orphan"
-    )
+
 
     # Команды, где пользователь является капитаном
     # (обратная ссылка из Team.captain)
@@ -289,3 +284,29 @@ class User(Base):
             full_name=full_name,
             role=UserRole.ORGANIZER
         )
+
+    # models/user.py (ОБНОВЛЯЕМ СВЯЗИ)
+
+    team: Mapped[Optional["Team"]] = relationship(
+            "Team",
+            back_populates="members",
+            foreign_keys="[User.team_id]"  # ← ВАЖНО!
+    )
+
+    # Все заявки, которые подавал пользователь
+    team_applications: Mapped[List["TeamApplication"]] = relationship(
+            "TeamApplication",
+            back_populates="user",
+            cascade="all, delete-orphan",
+            foreign_keys="[TeamApplication.user_id]"  # ← ВАЖНО!
+    )
+
+
+
+        # Команды, где пользователь является капитаном
+        # (обратная ссылка из Team.captain)
+    captained_teams: Mapped[List["Team"]] = relationship(
+            "Team",
+            back_populates="captain",
+            foreign_keys="[Team.captain_id]"  # ← ВАЖНО!
+    )

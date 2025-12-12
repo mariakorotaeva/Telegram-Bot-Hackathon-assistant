@@ -121,3 +121,17 @@ class TeamApplication(Base):
         """Отозвать заявку (только для пользователя)."""
         self.status = ApplicationStatus.CANCELLED
         self.reviewed_at = datetime.utcnow()
+
+
+    user: Mapped["User"] = relationship(
+            "User",
+            back_populates="team_applications",
+            foreign_keys=[user_id]  # ← ВАЖНО!
+    )
+
+    # Команда, в которую подана заявка
+    team: Mapped["Team"] = relationship(
+            "Team",
+            back_populates="applications",
+            foreign_keys=[team_id]  # ← ВАЖНО!
+    )
