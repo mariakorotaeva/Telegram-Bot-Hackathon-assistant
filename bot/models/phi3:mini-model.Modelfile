@@ -55,12 +55,12 @@ SYSTEM """
 ТЕПЕРЬ ОТВЕЧАЙ ТОЛЬКО НА РУССКОМ ЯЗЫКЕ КАК АССИСТЕНТ ХАКАТОНА.
 """
 
-PARAMETER temperature 0.1
+PARAMETER temperature 0.7
 PARAMETER top_p 0.7
 PARAMETER top_k 50
-PARAMETER num_predict 2048
+PARAMETER num_predict 512
 PARAMETER repeat_penalty 1.1
-PARAMETER num_ctx 4096
+PARAMETER num_ctx 2048
 PARAMETER seed 42
 
 TEMPLATE """
