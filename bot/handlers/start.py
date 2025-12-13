@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from typing import Tuple, Optional
 
 router = Router()
 
@@ -32,6 +33,27 @@ TIMEZONES = {
     "UTC+9": "Якутск (UTC+9)",
     "UTC+10": "Владивосток (UTC+10)"
 }
+
+def validate_name(name: str) -> Tuple[bool, Optional[str]]:
+    name = name.strip()
+    
+    if len(name) < 3:
+        return False, "❌ Что-то не похоже на ФИО! Попробуй ещё раз."
+    
+    if any(char.isdigit() for char in name):
+        return False, "❌ В ФИО не должно быть цифр! Попробуй ещё раз."
+    
+    for char in name:
+        if not (char.isalpha() or char.isspace() or char in '-.'):
+            return False, "❌ В ФИО нельзя использовать специальные символы! Попробуй ещё раз."
+    
+    if not any(char.isalpha() for char in name):
+        return False, "❌ ФИО должно содержать хотя бы одну букву!"
+    
+    if '  ' in name or '--' in name or '- ' in name or ' -' in name:
+        return False, "❌ Некорректное использование пробелов или дефисов!"
+    
+    return True, None
 
 def get_role_keyboard():
     builder = InlineKeyboardBuilder()
@@ -78,18 +100,10 @@ async def cmd_start_handler(message: Message, state: FSMContext) -> None:
 async def process_name(message: Message, state: FSMContext):
     name = message.text.strip()
 
-    if len(name) < 3:
-        await message.answer("❌ Что-то не похоже на ФИО, попробуй ещё раз!")
+    is_valid, error_message = validate_name(name)
+    if not is_valid:
+        await message.answer(error_message)
         return
-
-    if any(char.isdigit() for char in name):
-        await message.answer("❌ В ФИО не должно быть цифр! Попробуй ещё раз.")
-        return
-    
-    for char in name:
-        if not (char.isalpha() or char.isspace() or char == '-'):
-            await message.answer("❌ В ФИО нельзя использовать специальные символы! Попробуй ещё раз.")
-            return
     
     await state.update_data(full_name=name)
     
@@ -166,28 +180,6 @@ async def process_timezone(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer()
 
-@router.message(F.text == "/profile")
-async def show_profile(message: Message):
-    user_id = str(message.from_user.id)
-    
-    if user_id in temp_users_storage:
-        user_data = temp_users_storage[user_id]
-        
-        await message.answer(
-            f"👤 <b>Ваш профиль:</b>\n\n"
-            f"<b>ФИО:</b> {html.quote(user_data['full_name'])}\n"
-            f"<b>Роль:</b> {ROLES.get(user_data['role'])}\n"
-            f"<b>Часовой пояс:</b> {TIMEZONES.get(user_data['timezone'])}\n"
-            f"<b>Telegram ID:</b> {user_id}",
-            parse_mode="HTML"
-        )
-    else:
-        await message.answer(
-            "❌ <b>А кто это тут не зарегистрирован??</b>\n\n"
-            "Ну-ка жми /start 🚀",
-            parse_mode="HTML"
-        )
-
 @router.message(F.text == "/users")
 async def show_all_users(message: Message):
     user_id = str(message.from_user.id)
@@ -260,7 +252,6 @@ async def show_help(message: Message):
     help_text = (
         "📚 <b>Доступные команды:</b>\n\n"
         "/start - Начать регистрацию\n"
-        "/profile - Показать профиль\n"
         "/menu - Главное меню\n"
         "/reset - Сбросить регистрацию\n"
         "/help - Показать справку\n\n"
