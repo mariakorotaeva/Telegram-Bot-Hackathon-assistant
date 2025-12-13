@@ -88,16 +88,6 @@ async def show_menu_command(message: Message):
     
     await _show_menu(user_id, message, is_callback=False)
 
-@router.callback_query(F.data == "menu_schedule")
-async def show_schedule(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "📅 <b>Расписание хакатона</b>\n\n"
-        "Пока заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
-
 @router.callback_query(F.data == "menu_notifications")
 async def notifications_menu(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
@@ -184,16 +174,6 @@ async def mentor_my_teams(callback: CallbackQuery):
 async def mentor_set_meeting(callback: CallbackQuery):
     await callback.message.edit_text(
         "🤝 <b>Назначить встречу с командой</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
-
-@router.callback_query(F.data == "admin_edit_schedule")
-async def admin_edit_schedule(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "✏️ <b>Редактирование расписания</b>\n\n"
         "Заглушка",
         reply_markup=back_to_menu_keyboard(),
         parse_mode="HTML"
