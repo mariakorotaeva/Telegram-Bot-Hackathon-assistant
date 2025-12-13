@@ -16,10 +16,10 @@ class RegistrationStates(StatesGroup):
 temp_users_storage = {} #потом надо к бд подключится
 
 ROLES = {
-    "participant": "Участник",
-    "organizer": "Организатор", 
-    "mentor": "Ментор",
-    "volunteer": "Волонтёр"
+    "participant": "👤Участник",
+    "organizer": "🎪 Организатор", 
+    "mentor": "🧠 Ментор",
+    "volunteer": "🤝 Волонтёр"
 }
 
 TIMEZONES = {
@@ -54,31 +54,52 @@ async def cmd_start_handler(message: Message, state: FSMContext) -> None:
     if user_id in temp_users_storage:
         user_data = temp_users_storage[user_id]
         await message.answer(
-            f"Приветик, {user_data['full_name']}!\n"
-            "Ты уже зарегистрирован(a))"
+            f"<b>Приветик, {html.quote(user_data['full_name'])}!</b>\n\n"
+            f"✅ Ты уже зарегистрирован(а)!",
+            parse_mode="HTML"
         )
     else:
         await state.set_state(RegistrationStates.waiting_for_name)
         await message.answer(
-            "Приветик приветик!\n\n"
-            "Для начала работы нужно пройти регистрацию.\n"
-            "Пожалуйста, введи ФИО:"
+            "👋 <b>Приветик приветик!</b>\n\n"
+            "Я — бот-ассистент хакатона 🤖\n\n"
+            "Чем могу помочь:\n"
+            "• 📅 Расписание и даты\n"
+            "• 🎯 Темы и направления \n"
+            "• 👥 Формирование команд\n"
+            "• 🏆 Призы и критерии\n"
+            "• 💡 Советы и помощь\n\n"
+            "📝 Для начала работы нужно пройти регистрацию.\n"
+            "Пожалуйста, введи свое <b>ФИО</b>:",
+            parse_mode="HTML"
         )
 
 @router.message(RegistrationStates.waiting_for_name)
 async def process_name(message: Message, state: FSMContext):
-    if len(message.text.strip()) < 2:
-        await message.answer("Что-то не похоже на ФИО, попробуй ещё раз)")
+    name = message.text.strip()
+
+    if len(name) < 3:
+        await message.answer("❌ Что-то не похоже на ФИО, попробуй ещё раз!")
+        return
+
+    if any(char.isdigit() for char in name):
+        await message.answer("❌ В ФИО не должно быть цифр! Попробуй ещё раз.")
         return
     
-    await state.update_data(full_name=message.text.strip())
+    for char in name:
+        if not (char.isalpha() or char.isspace() or char == '-'):
+            await message.answer("❌ В ФИО нельзя использовать специальные символы! Попробуй ещё раз.")
+            return
+    
+    await state.update_data(full_name=name)
     
     await state.set_state(RegistrationStates.waiting_for_role)
     
     await message.answer(
-        f"Отлично, {message.text.strip()}! \n\n"
+        f"✅ <b>Отлично, {html.quote(name)}!</b>\n\n"
         "Теперь выбери твою роль:",
-        reply_markup=get_role_keyboard()
+        reply_markup=get_role_keyboard(),
+        parse_mode="HTML"
     )
 
 @router.callback_query(F.data.startswith("role_"))
@@ -86,7 +107,7 @@ async def process_role(callback: CallbackQuery, state: FSMContext):
     role_key = callback.data.replace("role_", "")
     
     if role_key not in ROLES:
-        await callback.answer("Ой, что ты такое навыбирал... давай-ка ещё раз")
+        await callback.answer("❌ Ой, что ты такое навыбирал... давай-ка ещё раз", show_alert=True)
         return
     
     await state.update_data(role=role_key)
@@ -94,9 +115,10 @@ async def process_role(callback: CallbackQuery, state: FSMContext):
     await state.set_state(RegistrationStates.waiting_for_timezone)
     
     await callback.message.edit_text(
-        f"Роль {ROLES[role_key]} выбрана!\n\n"
+        f"✅ Роль <b>{ROLES[role_key]}</b> выбрана!\n\n"
         "Теперь выбери часовой пояс:",
-        reply_markup=get_timezone_keyboard()
+        reply_markup=get_timezone_keyboard(),
+        parse_mode="HTML"
     )
     
     await callback.answer()
@@ -106,14 +128,16 @@ async def process_timezone(callback: CallbackQuery, state: FSMContext):
     tz_key = callback.data.replace("tz_", "")
     
     if tz_key not in TIMEZONES:
-        await callback.answer("Ой, что-то ты такое навыбирал... давай-ка ещё раз")
+        await callback.answer("❌ Ой, что-то ты такое навыбирал... давай-ка ещё раз", show_alert=True)
         return
     
     user_data = await state.get_data()
     
     if "full_name" not in user_data or "role" not in user_data:
         await callback.message.edit_text(
-            "Очень жаль. Регистрастрация не удалась. Делай всё заново. (нажми /start) "
+            "❌ <b>Очень жаль. Регистрация не удалась.</b>\n\n"
+            "Нужно пройти её заново /start",
+            parse_mode="HTML"
         )
         await state.clear()
         await callback.answer()
@@ -131,11 +155,13 @@ async def process_timezone(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     
     await callback.message.edit_text(
-        f"Регистрация завершена!\n\n"
-        f"ФИО: {user_data['full_name']}\n"
-        f"Роль: {ROLES[user_data['role']]}\n"
-        f"Часовой пояс: {TIMEZONES[tz_key]}\n\n"
-        f"Используй /menu для открытия главного меню"
+        f"🎉 <b>Регистрация завершена!</b>\n\n"
+        f"<b>Ваши данные:</b>\n"
+        f"<b>ФИО:</b> {html.quote(user_data['full_name'])}\n"
+        f"<b>Роль:</b> {ROLES[user_data['role']]}\n"
+        f"<b>Часовой пояс:</b> {TIMEZONES[tz_key]}\n\n"
+        f"Используй /menu для открытия главного меню",
+        parse_mode="HTML"
     )
     
     await callback.answer()
@@ -148,31 +174,48 @@ async def show_profile(message: Message):
         user_data = temp_users_storage[user_id]
         
         await message.answer(
-            f"Ваш профиль:\n\n"
-            f"ФИО: {user_data['full_name']}\n"
-            f"Роль: {ROLES.get(user_data['role'], 'Не указана')}\n"
-            f"Часовой пояс: {TIMEZONES.get(user_data['timezone'], 'Не указан')}\n"
+            f"👤 <b>Ваш профиль:</b>\n\n"
+            f"<b>ФИО:</b> {html.quote(user_data['full_name'])}\n"
+            f"<b>Роль:</b> {ROLES.get(user_data['role'])}\n"
+            f"<b>Часовой пояс:</b> {TIMEZONES.get(user_data['timezone'])}\n"
+            f"<b>Telegram ID:</b> {user_id}",
+            parse_mode="HTML"
         )
     else:
-        await message.answer("А кто это тут не зарегистрирован?? Ну-ка жми /start")
+        await message.answer(
+            "❌ <b>А кто это тут не зарегистрирован??</b>\n\n"
+            "Ну-ка жми /start 🚀",
+            parse_mode="HTML"
+        )
 
 @router.message(F.text == "/users")
 async def show_all_users(message: Message):
     user_id = str(message.from_user.id)
     
     if user_id not in temp_users_storage:
-        await message.answer("Сначала зарегистрироваться! Жми /start")
+        await message.answer(
+            "❌ <b>Сначала зарегистрируйся!</b>\n\n"
+            "Жми /start",
+            parse_mode="HTML"
+        )
         return
     
     if temp_users_storage[user_id]["role"] != "organizer":
-        await message.answer("Это только для организаторов.")
+        await message.answer(
+            "🚫 <b>Доступ запрещен!</b>\n\n"
+            "Эта команда только для организаторов.",
+            parse_mode="HTML"
+        )
         return
     
     if not temp_users_storage:
-        await message.answer("Нет зарегистрированных пользователей")
+        await message.answer(
+            "📭 <b>Нет зарегистрированных пользователей</b>",
+            parse_mode="HTML"
+        )
         return
     
-    text = "Зарегистрированные пользователи:\n\n"
+    text = "👥 <b>Зарегистрированные пользователи:</b>\n\n"
     user_cnt = 0
     
     for id, data in temp_users_storage.items():
@@ -183,14 +226,14 @@ async def show_all_users(message: Message):
         text += f"Часовой пояс: {TIMEZONES.get(data['timezone'], 'Неизвестно')}\n"
         text += f"ID: {id}\n\n"
     
-    text += f"Всего пользователей: {user_cnt}"
+    text += f"📊 <b>Всего пользователей:</b> {user_cnt}"
     
     if len(text) > 4000:
         parts = [text[i:i+4000] for i in range(0, len(text), 4000)]
         for part in parts:
-            await message.answer(part)
+            await message.answer(part, parse_mode="HTML")
     else:
-        await message.answer(text)
+        await message.answer(text, parse_mode="HTML")
 
 @router.message(F.text == "/reset")
 async def reset_registration(message: Message, state: FSMContext):
@@ -198,16 +241,24 @@ async def reset_registration(message: Message, state: FSMContext):
     
     if user_id in temp_users_storage:
         del temp_users_storage[user_id]
-        await message.answer("Регистрация сброшена. Используй /start для новой регистрации.")
+        await message.answer(
+            "🔄 <b>Регистрация сброшена!</b>\n\n"
+            "Используй /start для новой регистрации.",
+            parse_mode="HTML"
+        )
     else:
-        await message.answer("Ты и так не зарегистрирован! Используй /start")
+        await message.answer(
+            "🤷 <b>Ты и так не зарегистрирован!</b>\n\n"
+            "Используй /start 🚀",
+            parse_mode="HTML"
+        )
     
     await state.clear()
 
 @router.message(F.text == "/help")
 async def show_help(message: Message):
     help_text = (
-        "Доступные команды:\n\n"
+        "📚 <b>Доступные команды:</b>\n\n"
         "/start - Начать регистрацию\n"
         "/profile - Показать профиль\n"
         "/menu - Главное меню\n"
@@ -219,4 +270,4 @@ async def show_help(message: Message):
     if user_id in temp_users_storage and temp_users_storage[user_id]["role"] == "organizer":
         help_text += "/users - Показать всех пользователей\n"
     
-    await message.answer(help_text)
+    await message.answer(help_text, parse_mode="HTML")
