@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any
 from enum import Enum
+from aiogram import Bot
 
 class EventVisibility(Enum):
     ALL = "all"
@@ -46,7 +47,7 @@ class ScheduleService:
         creator_timezone: str = "UTC+3"
     ) -> Dict[str, Any]:
         self.last_event_id += 1
-        
+
         event = {
             "id": self.last_event_id,
             "title": title,
@@ -59,7 +60,7 @@ class ScheduleService:
             "creator_timezone": creator_timezone,
             "created_at": datetime.now()
         }
-        
+
         self.events.append(event)
         self._save_changes()
         return event
@@ -71,35 +72,37 @@ class ScheduleService:
         include_all: bool = True
     ) -> List[Dict[str, Any]]:
         role_events = []
-        
+    
         for event in sorted(self.events, key=lambda x: x["start_time"]):
             if include_all and "all" in event["visibility"]:
-                event_copy = event.copy()
-                event_copy["start_time_local"] = self._convert_time_for_user(
-                    event["start_time"], 
-                    event.get("creator_timezone", "UTC+3"),
-                    user_timezone
-                )
-                event_copy["end_time_local"] = self._convert_time_for_user(
-                    event["end_time"],
-                    event.get("creator_timezone", "UTC+3"),
-                    user_timezone
-                )
-                role_events.append(event_copy)
+                role_events.append({
+                    **event,
+                    "start_time_local": self._convert_time_for_user(
+                        event["start_time"], 
+                        event.get("creator_timezone", "UTC+3"),
+                        user_timezone
+                    ),
+                    "end_time_local": self._convert_time_for_user(
+                        event["end_time"],
+                        event.get("creator_timezone", "UTC+3"),
+                        user_timezone
+                    )
+                })
             elif role in event["visibility"]:
-                event_copy = event.copy()
-                event_copy["start_time_local"] = self._convert_time_for_user(
-                    event["start_time"],
-                    event.get("creator_timezone", "UTC+3"),
-                    user_timezone
-                )
-                event_copy["end_time_local"] = self._convert_time_for_user(
-                    event["end_time"],
-                    event.get("creator_timezone", "UTC+3"),
-                    user_timezone
-                )
-                role_events.append(event_copy)
-        
+                role_events.append({
+                    **event,
+                    "start_time_local": self._convert_time_for_user(
+                        event["start_time"],
+                        event.get("creator_timezone", "UTC+3"),
+                        user_timezone
+                    ),
+                    "end_time_local": self._convert_time_for_user(
+                        event["end_time"],
+                        event.get("creator_timezone", "UTC+3"),
+                        user_timezone
+                    )
+                })
+    
         return role_events
     
     def _convert_time_for_user(
@@ -108,10 +111,12 @@ class ScheduleService:
         event_timezone: str, 
         user_timezone: str
     ) -> datetime:
+    
         event_offset = TIMEZONE_OFFSETS.get(event_timezone, 3)
         user_offset = TIMEZONE_OFFSETS.get(user_timezone, 3)
-        offset_diff = user_offset - event_offset
-        return event_time + timedelta(hours=offset_diff)
+    
+        time_diff = user_offset - event_offset
+        return event_time + timedelta(hours=time_diff)
     
     def get_event_by_id(self, event_id: int) -> Optional[Dict[str, Any]]:
         for event in self.events:
@@ -148,8 +153,17 @@ class ScheduleService:
         event: Dict[str, Any], 
         user_timezone: str = "UTC+3"
     ) -> str:
-        start_time = event.get("start_time_local", event["start_time"])
-        end_time = event.get("end_time_local", event["end_time"])
+
+        start_time = self._convert_time_for_user(
+            event["start_time"],
+            event.get("creator_timezone", "UTC+3"),
+            user_timezone
+        )
+        end_time = self._convert_time_for_user(
+            event["end_time"],
+            event.get("creator_timezone", "UTC+3"),
+            user_timezone
+        )
         
         start = start_time.strftime("%d.%m %H:%M")
         end = end_time.strftime("%H:%M")
@@ -185,5 +199,75 @@ class ScheduleService:
                 text += f"\n<i>Для: {' '.join(roles_display)}</i>"
         
         return text
+    
+    async def add_event_with_notification(
+        self,
+        title: str,
+        description: str,
+        start_time: datetime,
+        end_time: datetime,
+        visibility: List[str],
+        location: str = "",
+        created_by: str = "",
+        creator_timezone: str = "UTC+3",
+        bot: Optional[Bot] = None,
+        temp_users_storage: Optional[Dict] = None
+    ) -> Dict[str, Any]:
+        
+        event = self.add_event(
+            title, description, start_time, end_time,
+            visibility, location, created_by, creator_timezone
+        )
+        
+        if bot and temp_users_storage:
+            from bot.handlers.notifications import notify_new_event
+            await notify_new_event(bot, event, temp_users_storage)
+        
+        return event
+    
+    async def update_event_with_notification(
+        self,
+        event_id: int,
+        bot: Optional[Bot] = None,
+        temp_users_storage: Optional[Dict] = None,
+        **kwargs
+    ) -> bool:
+        
+        old_event = self.get_event_by_id(event_id)
+        if not old_event:
+            return False
+        
+        changes = {}
+        for key, value in kwargs.items():
+            if key in old_event and old_event[key] != value:
+                if key != "visibility":
+                    changes[key] = value
+        
+        success = self.update_event(event_id, **kwargs)
+        
+        if success and changes and bot and temp_users_storage:
+            new_event = self.get_event_by_id(event_id)
+            from bot.handlers.notifications import notify_event_updated
+            await notify_event_updated(bot, new_event, changes, temp_users_storage)
+        
+        return success
+    
+    async def delete_event_with_notification(
+        self,
+        event_id: int,
+        bot: Optional[Bot] = None,
+        temp_users_storage: Optional[Dict] = None
+    ) -> bool:
+        event = self.get_event_by_id(event_id)
+        if not event:
+            return False
+        
+        success = self.delete_event(event_id)
+        
+        if success and bot and temp_users_storage:
+            from bot.handlers.notifications import notify_event_cancelled  # Исправленный импорт
+            await notify_event_cancelled(bot, event, temp_users_storage)
+        
+        return success
 
 schedule_service = ScheduleService()

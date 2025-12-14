@@ -1,15 +1,14 @@
 import asyncio
 import logging
 import sys
-from os import getenv
 
-from aiogram import Bot, Dispatcher, html
+from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.types import Message
 
-from .handlers import router
+from bot.handlers import router
+from bot.handlers.notifications import schedule_reminder_checker
+from bot.handlers.menu import temp_users_storage
 
 TOKEN = '8124039418:AAFiD-jK-NTtiJqYL868akQAg1u_zMwnpbQ'
 
@@ -18,6 +17,9 @@ dp.include_router(router)
 
 async def main() -> None:
     bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    
+    asyncio.create_task(schedule_reminder_checker(bot, temp_users_storage))
+    
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

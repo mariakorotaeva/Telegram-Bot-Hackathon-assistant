@@ -33,8 +33,9 @@ def get_organizer_menu():
     builder.button(text="✏️ Редактировать расписания", callback_data="admin_edit_schedule")
     builder.button(text="📊 Запустить опрос", callback_data="admin_create_poll")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
+    builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
     
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 2)
     return builder.as_markup()
 
 def get_mentor_menu():
@@ -91,30 +92,6 @@ async def show_menu_command(message: Message):
         return
     
     await _show_menu(user_id, message, is_callback=False)
-
-@router.callback_query(F.data == "menu_notifications")
-async def notifications_menu(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
-    user_data = temp_users_storage.get(user_id, {})
-    role = user_data.get("role", "participant")
-    
-    # Загружаем настройки уведомлений
-    from .notifications import notifications_storage, get_default_notification_settings
-    
-    settings = notifications_storage.get(user_id, get_default_notification_settings())
-    
-    status = "✅ Включены" if settings.get("enabled", True) else "❌ Выключены"
-    minutes = ", ".join(str(m) for m in sorted(settings.get("reminder_minutes", [15, 60])))
-    
-    await callback.message.edit_text(
-        f"🔔 <b>Управление уведомлениями</b>\n\n"
-        f"Текущий статус: {status}\n"
-        f"Напоминания за: {minutes} минут\n\n"
-        f"Здесь вы можете настроить получение уведомлений о ближайших событиях.",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
 
 @router.callback_query(F.data == "participant_faq")
 async def show_faq(callback: CallbackQuery):
