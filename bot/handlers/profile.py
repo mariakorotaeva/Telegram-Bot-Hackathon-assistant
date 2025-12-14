@@ -156,10 +156,10 @@ async def process_new_role(callback: CallbackQuery):
     temp_users_storage[user_id]["role"] = role_key
     
     await callback.message.edit_text(
-        f"✅ <b>Роль успешно изменена!</b>\n\n"
-        f"Теперь ваша роль: <b>{ROLES[role_key]}</b>\n\n",
-        "Используйте /menu для возврата в главное меню.",
-        parse_mode="HTML"
+    f"✅ <b>Роль успешно изменена!</b>\n\n"
+    f"Теперь ваша роль: <b>{ROLES[role_key]}</b>\n\n"
+    "Используйте /menu для возврата в главное меню.",
+    parse_mode="HTML"
     )
     await callback.answer()
 

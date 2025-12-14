@@ -98,9 +98,19 @@ async def notifications_menu(callback: CallbackQuery):
     user_data = temp_users_storage.get(user_id, {})
     role = user_data.get("role", "participant")
     
+    # Загружаем настройки уведомлений
+    from .notifications import notifications_storage, get_default_notification_settings
+    
+    settings = notifications_storage.get(user_id, get_default_notification_settings())
+    
+    status = "✅ Включены" if settings.get("enabled", True) else "❌ Выключены"
+    minutes = ", ".join(str(m) for m in sorted(settings.get("reminder_minutes", [15, 60])))
+    
     await callback.message.edit_text(
         f"🔔 <b>Управление уведомлениями</b>\n\n"
-        "Заглушка",
+        f"Текущий статус: {status}\n"
+        f"Напоминания за: {minutes} минут\n\n"
+        f"Здесь вы можете настроить получение уведомлений о ближайших событиях.",
         reply_markup=back_to_menu_keyboard(),
         parse_mode="HTML"
     )
