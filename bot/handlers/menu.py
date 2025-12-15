@@ -32,10 +32,11 @@ def get_organizer_menu():
     builder.button(text="📢 Сделать рассылку", callback_data="admin_broadcast")
     builder.button(text="✏️ Редактировать расписания", callback_data="admin_edit_schedule")
     builder.button(text="📊 Запустить опрос", callback_data="admin_create_poll")
-    builder.button(text="👤 Мой профиль", callback_data="menu_profile")
+    builder.button(text="👥 Управление задачами волонтеров", callback_data="admin_manage_tasks")
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
+    builder.button(text="👤 Мой профиль", callback_data="menu_profile")
     
-    builder.adjust(2, 2, 2)
+    builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
 def get_mentor_menu():
