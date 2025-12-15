@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -10,12 +10,14 @@ import os
 # Добавляем путь для импорта
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+# Настройка логгера
+logger = logging.getLogger(__name__)
+
 # Импортируем настоящий AI
 try:
     from models.ollama_handler import get_assistant
     assistant = get_assistant()
     AI_AVAILABLE = True
-    logger = logging.getLogger(__name__)
     logger.info("✅ AI Assistant загружен")
 except Exception as e:
     logger.error(f"❌ Ошибка загрузки AI: {e}")
@@ -34,12 +36,20 @@ def get_ai_keyboard():
         one_time_keyboard=False  # Важно! Клавиатура не скрывается
     )
 
+# Клавиатура для возврата в меню (используется после ответа)
+def get_back_to_menu_keyboard():
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Вернуться в меню", callback_data="back_to_menu")]
+        ]
+    )
+    return keyboard
 
 class AIState(StatesGroup):
     active = State()  # Пользователь в режиме AI
 
 
-@router.callback_query(F.data == "ask_ai_question")
+@router.callback_query(F.data == "ai_ask_question")
 async def start_ai_callback(callback: CallbackQuery, state: FSMContext):
     """Начало по кнопке из меню"""
     if not AI_AVAILABLE:
@@ -80,11 +90,19 @@ async def start_ai_command(message: Message, state: FSMContext):
 async def exit_ai(message: Message, state: FSMContext):
     """Выход по кнопке - работает всегда!"""
     await state.clear()
+    
+    # Создаем инлайн-клавиатуру для возврата в меню
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📋 Вернуться в меню", callback_data="back_to_menu")]
+        ]
+    )
+    
     await message.answer(
         "✅ <b>Вы вышли из режима AI</b>\n\n"
-        "Используйте /menu для возврата в меню",
+        "Используйте кнопку ниже для возврата в меню",
         parse_mode="HTML",
-        reply_markup=None  # Убираем клавиатуру
+        reply_markup=keyboard
     )
 
 
@@ -125,15 +143,29 @@ async def handle_real_ai_question(message: Message):
 
 🤖 <b>Ответ:</b>
 {result['answer']}
+
+⏱️ <i>Время ответа: {result.get('response_time', 'N/A')}</i>
 """
         else:
-            response = f"⚠️ Ошибка: {result.get('answer', 'Попробуйте снова')}"
+            response = f"""
+⚠️ <b>Ошибка:</b>
+{result.get('answer', 'Попробуйте снова')}
+
+<i>Ошибка: {result.get('error', 'неизвестная ошибка')}</i>
+"""
         
-        # Отправляем ответ с клавиатурой (кнопка выхода остается!)
+        # Отправляем ответ с клавиатурой выхода
         await message.answer(
             response,
             parse_mode="HTML",
-            reply_markup=get_ai_keyboard()  # Важно! Клавиатура прикрепляется к ответу
+            reply_markup=get_ai_keyboard()  # Кнопка выхода остается
+        )
+        
+        # Добавляем кнопку для возврата в меню
+        await message.answer(
+            "🔽 <i>Вы можете продолжить задавать вопросы или вернуться в меню</i>",
+            parse_mode="HTML",
+            reply_markup=get_back_to_menu_keyboard()
         )
         
     except Exception as e:
@@ -150,10 +182,36 @@ async def ai_status(message: Message):
     if AI_AVAILABLE and assistant:
         try:
             connected = await assistant.test_connection()
-            status = "✅ AI подключен и готов" if connected else "⚠️ AI не подключен"
-        except:
-            status = "⚠️ Ошибка проверки"
+            if assistant._model_loaded:
+                status = "✅ AI подключен, модель загружена и готова"
+            elif connected:
+                status = "⚠️ AI подключен, но модель не загружена"
+            else:
+                status = "❌ AI не подключен"
+            
+            # Добавляем информацию о модели
+            info = assistant.get_model_info()
+            status += f"\n\n📊 <b>Информация о модели:</b>\n"
+            status += f"• Модель: <code>{info['name']}</code>\n"
+            status += f"• Статус: {'🟢 Загружена' if info['loaded'] else '🟡 Загрузка'}\n"
+            status += f"• Кэш: {info['cache_size']} вопросов"
+            
+        except Exception as e:
+            status = f"⚠️ Ошибка проверки: {str(e)}"
     else:
         status = "❌ AI не загружен"
     
-    await message.answer(f"Статус AI: {status}")
+    await message.answer(
+        f"<b>Статус AI-ассистента:</b>\n\n{status}",
+        parse_mode="HTML"
+    )
+
+
+@router.message(Command("clear_ai_cache"))
+async def clear_ai_cache(message: Message):
+    """Очистка кэша AI"""
+    if AI_AVAILABLE and assistant:
+        assistant.clear_cache()
+        await message.answer("✅ Кэш AI очищен")
+    else:
+        await message.answer("❌ AI не доступен")

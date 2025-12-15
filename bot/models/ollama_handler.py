@@ -4,13 +4,12 @@
 import os
 import asyncio
 import aiohttp
-import json
 import logging
 import hashlib
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-logging.basicConfig(level=logging.INFO)
+# Настройка логгера
 logger = logging.getLogger(__name__)
 
 class OllamaHandler:
@@ -27,53 +26,53 @@ class OllamaHandler:
         # Флаг загруженной модели
         self._model_loaded = False
         
-        # Флаг прогрева модели
-        self._warmup_task = None
-        
-        logger.info(f"OllamaHandler инициализирован: {self.model_name}")
+        logger.info(f"🤖 OllamaHandler инициализирован для модели: {self.model_name}")
     
     async def initialize(self):
-        """Инициализация - вызывается после создания event loop"""
-        await self._warmup_model()
-    
-    async def _warmup_model(self):
-        """Прогрев модели - загружаем ее в память Ollama при старте"""
+        """Инициализация - проверяем доступность модели"""
         try:
-            logger.info(f"🔥 Прогрев модели {self.model_name}...")
+            logger.info(f"🔍 Проверка доступности модели {self.model_name}...")
             
-            # Сначала проверяем подключение
+            # Сначала проверяем подключение к Ollama
             if not await self.test_connection():
-                logger.warning("⚠️ Ollama недоступен, пропускаем прогрев")
-                return
+                logger.error("❌ Ollama недоступен! Проверьте, запущен ли ollama serve")
+                return False
             
-            # Используем очень короткий промпт для прогрева
-            warmup_prompt = "hello"
+            # Проверяем, что модель доступна
+            model_exists = await self._check_model_exists()
             
+            if model_exists:
+                logger.info(f"✅ Модель {self.model_name} доступна")
+                self._model_loaded = True
+                return True
+            else:
+                logger.error(f"❌ Модель {self.model_name} не найдена в Ollama!")
+                return False
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка инициализации: {e}")
+            return False
+    
+    async def _check_model_exists(self) -> bool:
+        """Проверяем, существует ли модель в Ollama"""
+        try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.host}/api/generate",
-                    json={
-                        "model": self.model_name,
-                        "prompt": warmup_prompt,
-                        "stream": False,
-                        "options": {
-                            "temperature": 0.7,
-                            "num_predict": 5,  # Всего 1 токен для прогрева
-                            "num_thread": 4,
-                        }
-                    },
-                    timeout=aiohttp.ClientTimeout(total=60)
+                async with session.get(
+                    f"{self.host}/api/tags", 
+                    timeout=5
                 ) as response:
                     if response.status == 200:
-                        self._model_loaded = True
-                        logger.info(f"✅ Модель {self.model_name} прогрета и готова")
-                    else:
-                        error_text = await response.text()
-                        logger.warning(f"⚠️ Модель не прогрета, статус: {response.status}, ошибка: {error_text[:100]}")
-        except asyncio.TimeoutError:
-            logger.warning(f"⚠️ Таймаут при прогреве модели")
+                        data = await response.json()
+                        models = data.get('models', [])
+                        
+                        for model in models:
+                            if model.get('name') == self.model_name:
+                                return True
+                        return False
+                    return False
         except Exception as e:
-            logger.warning(f"⚠️ Ошибка прогрева модели: {e}")
+            logger.error(f"❌ Ошибка проверки моделей: {e}")
+            return False
     
     async def ask(self, question: str, user_context: Optional[Dict] = None) -> Dict[str, Any]:
         """Задать вопрос модели"""
@@ -87,30 +86,26 @@ class OllamaHandler:
             return cached
         
         try:
-            # Формируем промпт
-            prompt = self._build_prompt(question, user_context)
+            logger.info(f"📤 Отправка запроса: '{question[:50]}...'")
             
-            logger.info(f"📤 Отправка запроса к {self.model_name}: '{question[:50]}...'")
-            
-            # Оптимальные настройки для CPU в Codespace
+            # Отправляем чистый вопрос модели
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{self.host}/api/generate",
                     json={
                         "model": self.model_name,
-                        "prompt": prompt,
+                        "prompt": question,  # Только вопрос пользователя
                         "stream": False,
                         "options": {
                             "temperature": 0.7,
-                            "num_predict": 100,
+                            "num_predict": 200,
                             "num_thread": 4,
-                            "top_k": 20,
+                            "top_k": 40,
                             "top_p": 0.9,
                             "repeat_penalty": 1.1,
-                            "seed": 42
                         }
                     },
-                    timeout=aiohttp.ClientTimeout(total=350)
+                    timeout=aiohttp.ClientTimeout(total=self.timeout)
                 ) as response:
                     elapsed = (datetime.now() - start_time).total_seconds()
                     
@@ -125,19 +120,23 @@ class OllamaHandler:
                             'answer': answer,
                             'model': self.model_name,
                             'response_time': f"{elapsed:.2f}с",
-                            'timestamp': datetime.now().isoformat()
+                            'timestamp': datetime.now().isoformat(),
                         }
                         
                         # Кэшируем частые вопросы
                         if self._should_cache(question):
                             self._response_cache[cache_key] = result
-                            logger.info(f"💾 Ответ закэширован")
                         
                         return result
                     else:
                         error_text = await response.text()
-                        logger.error(f"❌ Ошибка API: {response.status} - {error_text[:100]}")
-                        raise Exception(f"API error {response.status}")
+                        logger.error(f"❌ Ошибка API: {response.status}")
+                        return {
+                            'success': False,
+                            'answer': f"Ошибка сервера",
+                            'error': 'api_error',
+                            'response_time': f"{elapsed:.2f}с"
+                        }
                         
         except asyncio.TimeoutError:
             elapsed = (datetime.now() - start_time).total_seconds()
@@ -153,7 +152,7 @@ class OllamaHandler:
             logger.error(f"❌ Ошибка: {e}")
             return {
                 'success': False,
-                'answer': f"⚠️ Ошибка подключения к Ollama. Убедитесь что Ollama запущен.",
+                'answer': "⚠️ Ошибка подключения к AI.",
                 'error': str(e),
                 'response_time': f"{elapsed:.2f}с"
             }
@@ -161,7 +160,7 @@ class OllamaHandler:
     def _get_cache_key(self, question: str) -> str:
         """Создание ключа для кэша"""
         normalized = question.lower().strip()
-        return hashlib.md5(normalized.encode()).hexdigest()
+        return hashlib.md5(normalized.encode()).hexdigest()[:16]
     
     def _should_cache(self, question: str) -> bool:
         """Определяем, стоит ли кэшировать вопрос"""
@@ -170,42 +169,33 @@ class OllamaHandler:
         cache_keywords = [
             'когда', 'где', 'сколько', 'как', 'темы', 
             'призы', 'команды', 'начало', 'расписание',
-            'хакатон', 'что такое', 'можно ли', 'требования'
+            'хакатон', 'что такое', 'можно ли', 'требования',
+            'длится', 'время', 'участие', 'регистрация',
+            'стоит', 'цена', 'бесплатно', 'принять участие',
+            'место', 'адрес', 'формат', 'организатор'
         ]
         
         return any(keyword in question_lower for keyword in cache_keywords)
-    
-    def _build_prompt(self, question: str, user_context: Optional[Dict] = None) -> str:
-        """Формирование промпта"""
-        prompt = f"""Ты - ассистент хакатона. Отвечай кратко и информативно, 1-3 предложения.
-
-Вопрос: {question}
-
-Ответ:"""
-        
-        return prompt
     
     async def test_connection(self) -> bool:
         """Проверить подключение к Ollama"""
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
-                    f"{self.host}/api/tags", 
-                    timeout=5
+                    f"{self.host}/", 
+                    timeout=3
                 ) as response:
-                    if response.status == 200:
-                        return True
-                    return False
+                    return response.status == 200
         except Exception as e:
-            logger.error(f"❌ Ошибка подключения к Ollama: {e}")
+            logger.debug(f"Не удалось подключиться к Ollama")
             return False
     
     def get_model_info(self) -> Dict[str, Any]:
-        """Получить информацию о модели"""
+        """Получить базовую информацию о модели"""
         return {
             'name': self.model_name,
             'loaded': self._model_loaded,
-            'cache_size': len(self._response_cache)
+            'cache_size': len(self._response_cache),
         }
     
     def clear_cache(self):
