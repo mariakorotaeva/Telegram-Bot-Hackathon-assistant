@@ -2,7 +2,7 @@ import requests
 import json
 import logging
 from typing import Dict, Any, Optional
-from config import Config
+from config.config import Config
 from database_handler import KnowledgeBaseHandler
 
 # Настройка логгирования

@@ -20,9 +20,10 @@ def get_participant_menu():
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
     builder.button(text="👥 Поиск команды", callback_data="participant_team_search")
     builder.button(text="❓ Частые вопросы", callback_data="participant_faq")
+    builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
     
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 2)
     return builder.as_markup()
 
 def get_organizer_menu():
@@ -34,9 +35,10 @@ def get_organizer_menu():
     builder.button(text="📊 Запустить опрос", callback_data="admin_create_poll")
     builder.button(text="👥 Управление задачами волонтеров", callback_data="admin_manage_tasks")
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
+    builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
     
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2)
     return builder.as_markup()
 
 def get_mentor_menu():
@@ -46,9 +48,10 @@ def get_mentor_menu():
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
     builder.button(text="📋 Мои команды", callback_data="mentor_my_teams")
     builder.button(text="🤝 Назначить встречу", callback_data="mentor_set_meeting")
+    builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
     
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2, 2)
     return builder.as_markup()
 
 def get_volunteer_menu():
@@ -57,9 +60,10 @@ def get_volunteer_menu():
     builder.button(text="📅 Расписание", callback_data="menu_schedule")
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
     builder.button(text="📋 Мои задачи", callback_data="volunteer_tasks")
+    builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
     
-    builder.adjust(2, 2)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 async def _show_menu(user_id: str, target: Message | CallbackQuery, is_callback: bool = False):
