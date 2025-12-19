@@ -18,7 +18,7 @@ class OllamaHandler:
     def __init__(self):
         self.model_name = os.getenv('OLLAMA_MODEL', 'hackathon-assistant:latest')
         self.host = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
-        self.timeout = int(os.getenv('RESPONSE_TIMEOUT', 30))
+        self.timeout = int(os.getenv('RESPONSE_TIMEOUT', 350))
         
         # Кэш для частых вопросов
         self._response_cache = {}
