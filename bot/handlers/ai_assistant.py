@@ -34,27 +34,21 @@ class AIAssistantStates(StatesGroup):
 
 class AIAssistant:
     def __init__(self):
-        """Инициализация AI ассистента"""
         self.assistant = None
         self.is_available = False
         self._warmed_up = False
         
     async def initialize(self) -> bool:
-        """Инициализация и проверка подключения"""
-        logger.info("🔗 Проверка подключения к Ollama...")
+        logger.info("Проверка подключения к Ollama...")
         
         try:
             self.assistant = get_assistant()
             self.is_available = await self.assistant.test_connection()
-            
             if self.is_available:
                 logger.info("✅ Ollama доступен!")
-                
-                # Прогреваем модель
                 await self._warm_up_model()
             else:
                 logger.warning("⚠️ Ollama не доступен!")
-                
             return self.is_available
             
         except Exception as e:
@@ -63,19 +57,12 @@ class AIAssistant:
             return False
     
     async def _warm_up_model(self):
-        """Прогрев модели при запуске (использует промпт из Model файла)"""
         if self._warmed_up or not self.is_available:
             return
-            
         try:
-            logger.info("🔥 Прогреваю модель...")
-            
-            # Простой прогревочный вопрос, чтобы активировать промпт из Model файла
+            logger.info("Прогреваю модель...")
             warm_up_question = "Привет! Подтверди, что готов отвечать на вопросы о хакатоне."
-            
-            # Отправляем прогревочный запрос
             warm_up_result = await self.assistant.ask(warm_up_question)
-            
             if warm_up_result['success']:
                 self._warmed_up = True
                 logger.info("✅ Модель успешно прогрета!")
@@ -84,12 +71,8 @@ class AIAssistant:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка при прогреве модели: {e}")
-            # Продолжаем работу даже если прогрев не удался
     
     async def ask_question(self, question: str) -> Dict[str, Any]:
-        """
-        Задать вопрос AI ассистенту
-        """
         if not self.is_available or not self.assistant:
             return {
                 'success': False,
@@ -107,13 +90,10 @@ class AIAssistant:
             }
         
         logger.info(f"📥 Вопрос: {question[:50]}...")
-        
         try:
             result = await self.assistant.ask(question)
-            
             if not result.get('success', False):
                 result['answer'] = f"❌ Не удалось получить ответ.\n\n{result.get('answer', 'Попробуйте переформулировать вопрос.')}"
-                
             return result
             
         except Exception as e:
@@ -126,9 +106,6 @@ class AIAssistant:
             }
     
     async def get_standard_answer(self, category: str) -> Dict[str, Any]:
-        """
-        Получить стандартный ответ по категории
-        """
         questions_map = {
             "schedule": "Когда начало хакатона? Какое расписание? Какие сроки?",
             "topics": "Какие темы и направления хакатона? Что можно делать?",
@@ -137,28 +114,20 @@ class AIAssistant:
             "rules": "Какие правила хакатона? Что можно и нельзя делать?",
             "contacts": "Как связаться с организаторами? Где получить помощь?"
         }
-        
         if category not in questions_map:
             return await self.ask_question(category)
-            
         return await self.ask_question(questions_map[category])
 
 assistant = AIAssistant()
 
 async def initialize_assistant() -> bool:
-    """
-    Инициализация ассистента при запуске бота
-    """
-    logger.info("🤖 Инициализация AI ассистента...")
-    
+    logger.info("Инициализация AI ассистента...")
     try:
         result = await assistant.initialize()
-        
         if result:
             logger.info("✅ AI ассистент готов к работе!")
         else:
             logger.warning("⚠️ AI ассистент не инициализирован")
-            
         return result
         
     except Exception as e:
@@ -167,9 +136,6 @@ async def initialize_assistant() -> bool:
 
 @router.callback_query(F.data == "menu_ask_ai_question")
 async def show_ai_assistant(callback: CallbackQuery, state: FSMContext):
-    """
-    Показать AI ассистента
-    """
     if not assistant.is_available:
         await callback.message.edit_text(
             "❌ <b>AI ассистент временно недоступен</b>\n\n"
@@ -178,9 +144,8 @@ async def show_ai_assistant(callback: CallbackQuery, state: FSMContext):
         )
         await callback.answer()
         return
-    
     welcome_text = (
-        f"🤖 <b>AI Ассистент Хакатона</b>\n\n"
+        f"🤖 <b>Я -Лама, AI Ассистент Хакатона</b>\n\n"
         f"Задайте вопрос о хакатоне:\n"
         f"• 📅 Расписание и даты\n"
         f"• 🎯 Темы и направления\n"
@@ -199,39 +164,25 @@ async def show_ai_assistant(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AIAssistantStates.waiting_for_question)
 async def process_ai_question(message: Message, state: FSMContext):
-    """
-    Обработка вопроса для AI ассистента
-    """
     user_question = message.text.strip()
-    
     if len(user_question) < 3:
         await message.answer(
             "📝 Пожалуйста, напишите вопрос более подробно (минимум 3 символа)."
         )
         return
-    
-    # Показываем статус "печатает"
     await message.bot.send_chat_action(message.chat.id, "typing")
-    
-    # Отправляем временное сообщение
     temp_msg = await message.answer("🧠 <b>Ищу ответ...</b>", parse_mode=ParseMode.HTML)
-    
-    # Получаем ответ от AI
     result = await assistant.ask_question(user_question)
-    
-    # Удаляем временное сообщение
     try:
         await temp_msg.delete()
     except:
         pass
-    
-    # Форматируем и отправляем ответ
     if result['success']:
         response = (
             f"💬 <b>Ваш вопрос:</b> <i>{html.quote(user_question)}</i>\n\n"
-            f"🤖 <b>Ответ:</b>\n"
+            f"📝 <b>Ответ:</b>\n"
             f"{result['answer']}\n\n"
-            f"<code>⏱️ {result['response_time']} | 🤖 {result['model']}</code>"
+            f"<code>{result['response_time']}</code>"
         )
     else:
         response = (
@@ -240,17 +191,11 @@ async def process_ai_question(message: Message, state: FSMContext):
         )
     
     await message.answer(response, parse_mode=ParseMode.HTML)
-    
-    # Оставляем пользователя в том же состоянии для след. вопроса
     await state.set_state(AIAssistantStates.waiting_for_question)
 
 @router.callback_query(F.data.startswith("ai_category_"))
 async def handle_ai_category(callback: CallbackQuery):
-    """
-    Обработка стандартных категорий вопросов
-    """
     category = callback.data.replace("ai_category_", "")
-    
     category_names = {
         "schedule": "📅 Расписание",
         "topics": "🎯 Темы",
@@ -259,55 +204,35 @@ async def handle_ai_category(callback: CallbackQuery):
         "rules": "📋 Правила",
         "contacts": "📞 Контакты"
     }
-    
     category_name = category_names.get(category, "🤖 Ответ")
-    
     if not assistant.is_available:
         await callback.answer("❌ AI ассистент недоступен", show_alert=True)
         return
-    
     await callback.answer("🔍 Ищу информацию...")
-    
-    # Показываем статус "печатает"
     await callback.bot.send_chat_action(callback.message.chat.id, "typing")
-    
-    # Отправляем временное сообщение
     temp_msg = await callback.message.answer("🧠 <b>Ищу ответ...</b>", parse_mode=ParseMode.HTML)
-    
-    # Получаем стандартный ответ
     result = await assistant.get_standard_answer(category)
-    
-    # Удаляем временное сообщение
     try:
         await temp_msg.delete()
     except:
         pass
-    
-    # Форматируем ответ
     if result['success']:
         response = (
             f"<b>{category_name}</b>\n\n"
             f"{result['answer']}\n\n"
-            f"<code>⏱️ {result['response_time']} | 🤖 {result['model']}</code>"
+            f"<code>{result['response_time']}</code>"
         )
     else:
         response = (
             f"⚠️ <b>Не удалось получить информацию</b>\n\n"
             f"{result['answer']}"
         )
-    
     await callback.message.answer(response, parse_mode=ParseMode.HTML)
     await callback.answer()
 
 @router.callback_query(F.data == "ai_back_to_menu")
 async def back_to_menu_from_ai(callback: CallbackQuery, state: FSMContext):
-    """
-    Вернуться в меню из AI ассистента
-    """
     await state.clear()
-    
-    # Импортируем здесь, чтобы избежать циклического импорта
     from .menu import show_main_menu
-    
     await show_main_menu(callback.message)
     await callback.answer()
