@@ -3,6 +3,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKe
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 
+from services.user_service import UserService
 from .start import temp_users_storage, ROLES
 from .broadcast import BroadcastStates
 
@@ -47,11 +48,10 @@ def get_mentor_menu():
     builder.button(text="📅 Расписание", callback_data="menu_schedule")
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
     builder.button(text="📋 Мои команды", callback_data="mentor_my_teams")
-    builder.button(text="🤝 Назначить встречу", callback_data="mentor_set_meeting")
     builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
     
-    builder.adjust(2, 2, 2)
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 def get_volunteer_menu():
@@ -66,21 +66,21 @@ def get_volunteer_menu():
     builder.adjust(2, 2, 1)
     return builder.as_markup()
 
-async def _show_menu(user_id: str, target: Message | CallbackQuery, is_callback: bool = False):
-    user_data = temp_users_storage[user_id]
-    role = user_data["role"]
-    
+async def _show_menu(user_id: int, role: str, target: Message | CallbackQuery, is_callback: bool = False):
+    user = await UserService().get_by_tg_id(user_id)
+    full_name = user.full_name
+
     if role == "organizer":
-        text = f"🎪 <b>Меню организатора</b>\n\nДобро пожаловать, {user_data['full_name']}!"
+        text = f"🎪 <b>Меню организатора</b>\n\nДобро пожаловать, {full_name}!"
         keyboard = get_organizer_menu()
     elif role == "mentor":
-        text = f"🧠 <b>Меню ментора</b>\n\nДобро пожаловать, {user_data['full_name']}!"
+        text = f"🧠 <b>Меню ментора</b>\n\nДобро пожаловать, {full_name}!"
         keyboard = get_mentor_menu()
     elif role == "volunteer":
-        text = f"🤝 <b>Меню волонтера</b>\n\nДобро пожаловать, {user_data['full_name']}!"
+        text = f"🤝 <b>Меню волонтера</b>\n\nДобро пожаловать, {full_name}!"
         keyboard = get_volunteer_menu()
     else:
-        text = f"👋 <b>Главное меню</b>\n\nДобро пожаловать, {user_data['full_name']}!"
+        text = f"👋 <b>Главное меню</b>\n\nДобро пожаловать, {full_name}!"
         keyboard = get_participant_menu()
     
     if is_callback:
@@ -90,16 +90,25 @@ async def _show_menu(user_id: str, target: Message | CallbackQuery, is_callback:
 
 @router.message(F.text == "/menu")
 async def show_menu_command(message: Message):
-    user_id = str(message.from_user.id)
-    
-    if user_id not in temp_users_storage:
-        await message.answer("❌ Сначала зарегистрируйся с помощью /start")
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
+        await message.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
     
-    await _show_menu(user_id, message, is_callback=False)
+    role = user.role
+    await _show_menu(user_id, role, message, is_callback=False)
 
 @router.callback_query(F.data == "participant_faq")
 async def show_faq(callback: CallbackQuery):
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
+    
     from bot.services.faq_service import faq_service
     categories = faq_service.get_categories()
    
@@ -166,33 +175,14 @@ async def mentor_my_teams(callback: CallbackQuery):
     )
     await callback.answer()
 
-@router.callback_query(F.data == "mentor_set_meeting")
-async def mentor_set_meeting(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "🤝 <b>Назначить встречу с командой</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
-
-#@router.callback_query(F.data == "admin_create_poll")
-#async def admin_create_poll(callback: CallbackQuery):
-#    await callback.message.edit_text(
-#        "📊 <b>Запуск опроса</b>\n\n"
-#        "Заглушка",
-#        reply_markup=back_to_menu_keyboard(),
-#        parse_mode="HTML"
-#    )
-#    await callback.answer()
-
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
-    
-    if user_id not in temp_users_storage:
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
     
-    await _show_menu(user_id, callback, is_callback=True)
+    await _show_menu(user_id, user.role, callback, is_callback=True)
     await callback.answer()
