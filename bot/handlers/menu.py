@@ -4,7 +4,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 
 from services.user_service import UserService
-from .start import temp_users_storage, ROLES
+from .start import ROLES
 from .broadcast import BroadcastStates
 
 router = Router()

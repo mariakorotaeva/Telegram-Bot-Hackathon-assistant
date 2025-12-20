@@ -33,6 +33,9 @@ class UserService:
         )
         return await self.user_repo.create(user)
 
+    async def get_all(self):
+        return await self.user_repo.get_all()
+
     async def get_all_participants(self):
         return await self.user_repo.get_all_participants()
 

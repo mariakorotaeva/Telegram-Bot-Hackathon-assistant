@@ -5,7 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.enums import ParseMode
 
-from .start import temp_users_storage
+from services.user_service import UserService
 
 router = Router()
 
@@ -32,33 +32,44 @@ def back_to_menu_keyboard():
     return builder.as_markup()
 
 async def send_broadcast(bot, role, text, sender_id):
-    for user_id, user_data in temp_users_storage.items():
-        if user_id == sender_id:
+    users = await UserService().get_all()
+    
+    if not users:
+        return 0
+    
+    sent_count = 0
+    
+    for user in users:
+        if str(user.telegram_id) == str(sender_id):
             continue
             
-        if role != "all" and user_data.get("role") != role:
+        if role != "all" and user.role != role:
             continue
         
         try:
             await bot.send_message(
-                chat_id=int(user_id),
+                chat_id=int(user.telegram_id),
                 text=text,
                 parse_mode=ParseMode.HTML
             )
-        except Exception:
+            sent_count += 1
+        except Exception as e:
+            print(f"Ошибка отправки пользователю {user.telegram_id}: {e}")
             continue
+    
+    return sent_count
 
 
 @router.callback_query(F.data == "admin_broadcast")
 async def start_broadcast(callback: CallbackQuery, state: FSMContext):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start")
         return
     
-    user_data = temp_users_storage[user_id]
-    if user_data.get("role") != "organizer":
+    if user.role != "organizer":
         await callback.answer("❌ Только организаторы могут делать рассылку")
         return
     
@@ -118,7 +129,7 @@ async def process_broadcast_text(message: Message, state: FSMContext):
     data = await state.get_data()
     selected_role = data["selected_role"]
     
-    await send_broadcast(
+    sent_count = await send_broadcast(
         bot=message.bot,
         role=selected_role,
         text=message.text,
@@ -134,7 +145,8 @@ async def process_broadcast_text(message: Message, state: FSMContext):
     }
     
     await message.answer(
-        f"✅ <b>Рассылка отправлена!</b>\n\n",
+        f"✅ <b>Рассылка отправлена!</b>\n\n"
+        f"<b>Успешно отправлено:</b> {sent_count} сообщений\n\n",
         reply_markup=back_to_menu_keyboard(),
         parse_mode="HTML"
     )

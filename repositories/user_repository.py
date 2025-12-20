@@ -62,6 +62,13 @@ class UserRepository:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount > 0
+    
+    async def get_all(self) -> List[User]:
+        """Возвращает всех пользователей."""
+        stmt = select(User).where(User.is_active == True)  # Только активных
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     async def get_all_participants(self) -> List[User]:
         """Возвращает всех участников."""
