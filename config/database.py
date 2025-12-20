@@ -2,6 +2,7 @@
 import os
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
+from contextlib import asynccontextmanager
 
 class Base(DeclarativeBase):
     pass
@@ -10,9 +11,9 @@ class Base(DeclarativeBase):
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
     # Измени на свои данные:
-    "postgresql+asyncpg://hackathon_user:hackathon123@localhost:5432/hackathon_bot"
+    # "postgresql+asyncpg://hackathon_user:hackathon123@localhost:5432/hackathon_bot"
     # Или если хочешь использовать postgres:
-    # "postgresql+asyncpg://postgres:password123@localhost:5432/hackathon_bot"
+    "postgresql+asyncpg://postgres:password@localhost:5432/hackathon_bot"
 )
 
 engine = create_async_engine(DATABASE_URL, echo=True)
@@ -22,6 +23,7 @@ AsyncSessionLocal = async_sessionmaker(
     expire_on_commit=False
 )
 
+@asynccontextmanager
 async def get_db() -> AsyncSession:
     async with AsyncSessionLocal() as session:
         try:

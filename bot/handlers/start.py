@@ -7,6 +7,8 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import Tuple, Optional
 
+from services.user_service import UserService
+
 router = Router()
 
 class RegistrationStates(StatesGroup):
@@ -69,14 +71,15 @@ def get_timezone_keyboard():
     builder.adjust(2)
     return builder.as_markup()
 
+# DONE
 @router.message(CommandStart())
 async def cmd_start_handler(message: Message, state: FSMContext) -> None:
-    user_id = str(message.from_user.id)
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id in temp_users_storage:
-        user_data = temp_users_storage[user_id]
+    if user is not None:
         await message.answer(
-            f"<b>Приветик, {html.quote(user_data['full_name'])}!</b>\n\n"
+            f"<b>Приветик, {html.quote(user.full_name)}!</b>\n\n"
             f"✅ Ты уже зарегистрирован(а)!",
             parse_mode="HTML"
         )
@@ -96,6 +99,7 @@ async def cmd_start_handler(message: Message, state: FSMContext) -> None:
             parse_mode="HTML"
         )
 
+# DONE
 @router.message(RegistrationStates.waiting_for_name)
 async def process_name(message: Message, state: FSMContext):
     name = message.text.strip()
@@ -116,6 +120,7 @@ async def process_name(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
+# DONE
 @router.callback_query(F.data.startswith("role_"))
 async def process_role(callback: CallbackQuery, state: FSMContext):
     role_key = callback.data.replace("role_", "")
@@ -137,6 +142,7 @@ async def process_role(callback: CallbackQuery, state: FSMContext):
     
     await callback.answer()
 
+# DONE
 @router.callback_query(F.data.startswith("tz_"))
 async def process_timezone(callback: CallbackQuery, state: FSMContext):
     tz_key = callback.data.replace("tz_", "")
@@ -157,34 +163,31 @@ async def process_timezone(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
         return
     
-    user_id = str(callback.from_user.id)
-    temp_users_storage[user_id] = {
-        "tg_id": user_id,
-        "full_name": user_data["full_name"],
-        "role": user_data["role"],
-        "timezone": tz_key,
-        "username": callback.from_user.username,
-    }
+    user_id = int(callback.from_user.id)
+    user = await UserService().create_user(user_id, callback.from_user.username, user_data["full_name"], user_data["role"], tz_key)
     
     await state.clear()
     
     await callback.message.edit_text(
         f"🎉 <b>Регистрация завершена!</b>\n\n"
         f"<b>Ваши данные:</b>\n"
-        f"<b>ФИО:</b> {html.quote(user_data['full_name'])}\n"
-        f"<b>Роль:</b> {ROLES[user_data['role']]}\n"
-        f"<b>Часовой пояс:</b> {TIMEZONES[tz_key]}\n\n"
+        f"<b>ФИО:</b> {html.quote(user.full_name)}\n"
+        f"<b>Роль:</b> {ROLES[user.role]}\n"
+        f"<b>Часовой пояс:</b> {user.timezone}\n\n"
         f"Используй /menu для открытия главного меню",
         parse_mode="HTML"
     )
     
     await callback.answer()
 
+# DONE
 @router.message(F.text == "/users")
 async def show_all_users(message: Message):
-    user_id = str(message.from_user.id)
+    user_id = int(message.from_user.id)
+    user_serv = UserService()
+    user = await user_serv.get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await message.answer(
             "❌ <b>Сначала зарегистрируйся!</b>\n\n"
             "Жми /start",
@@ -192,7 +195,7 @@ async def show_all_users(message: Message):
         )
         return
     
-    if temp_users_storage[user_id]["role"] != "organizer":
+    if user.role != "organizer":
         await message.answer(
             "🚫 <b>Доступ запрещен!</b>\n\n"
             "Эта команда только для организаторов.",
@@ -200,7 +203,8 @@ async def show_all_users(message: Message):
         )
         return
     
-    if not temp_users_storage:
+    participants = await user_serv.get_all_participants()
+    if len(participants) == 0:
         await message.answer(
             "📭 <b>Нет зарегистрированных пользователей</b>",
             parse_mode="HTML"
@@ -210,13 +214,13 @@ async def show_all_users(message: Message):
     text = "👥 <b>Зарегистрированные пользователи:</b>\n\n"
     user_cnt = 0
     
-    for id, data in temp_users_storage.items():
+    for part in participants:
         user_cnt += 1
-        username = f" @{data.get('username', '')}" if data.get('username') else ""
-        text += f"{user_cnt}. {data['full_name']}{username}\n"
-        text += f"Роль: {ROLES.get(data['role'], 'Неизвестно')}\n"
-        text += f"Часовой пояс: {TIMEZONES.get(data['timezone'], 'Неизвестно')}\n"
-        text += f"ID: {id}\n\n"
+        username = f" @{part.username}" if part.username else ""
+        text += f"{user_cnt}. {part.full_name}{username}\n"
+        text += f"Роль: {ROLES.get(str(part.role.value), 'Неизвестно')}\n"
+        text += f"Часовой пояс: {TIMEZONES.get(part.timezone, 'Неизвестно')}\n"
+        text += f"ID: {part.id}\n\n"
     
     text += f"📊 <b>Всего пользователей:</b> {user_cnt}"
     
@@ -229,10 +233,12 @@ async def show_all_users(message: Message):
 
 @router.message(F.text == "/reset")
 async def reset_registration(message: Message, state: FSMContext):
-    user_id = str(message.from_user.id)
+    user_id = int(message.from_user.id)
+    user_serv = UserService()
+    user = await user_serv.get_by_tg_id(user_id)
     
-    if user_id in temp_users_storage:
-        del temp_users_storage[user_id]
+    if user:
+        await user_serv.delete_user(user_id)
         await message.answer(
             "🔄 <b>Регистрация сброшена!</b>\n\n"
             "Используй /start для новой регистрации.",
@@ -247,6 +253,7 @@ async def reset_registration(message: Message, state: FSMContext):
     
     await state.clear()
 
+# DONE
 @router.message(F.text == "/help")
 async def show_help(message: Message):
     help_text = (
@@ -257,8 +264,9 @@ async def show_help(message: Message):
         "/help - Показать справку\n\n"
     )
     
-    user_id = str(message.from_user.id)
-    if user_id in temp_users_storage and temp_users_storage[user_id]["role"] == "organizer":
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    if user and user.role == "organizer":
         help_text += "/users - Показать всех пользователей\n"
     
     await message.answer(help_text, parse_mode="HTML")

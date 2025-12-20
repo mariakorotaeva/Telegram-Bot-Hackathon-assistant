@@ -1,0 +1,14 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: hackathon_bot
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postg:/var/lib/postgresql/data

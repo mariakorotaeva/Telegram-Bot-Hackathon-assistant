@@ -65,7 +65,7 @@ class User(Base):
     # Полное имя пользователя (обязательное)
     full_name: Mapped[str] = mapped_column(String(200), nullable=False)
 
-    # Роль пользователя в системе
+    # Роль пользователя в системе (обязательная)
     role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole), nullable=False)
 
     # ==================== КОНТАКТНАЯ ИНФОРМАЦИЯ ====================

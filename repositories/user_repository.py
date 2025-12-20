@@ -9,46 +9,59 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
 from models.user import User, UserRole, ParticipantStatus
+from config.database import get_db
 
 
 class UserRepository:
     """Репозиторий для работы с таблицей users."""
 
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self): ...
 
     async def create(self, user: User) -> User:
         """Создаёт нового пользователя."""
-        self.session.add(user)
-        await self.session.commit()
-        await self.session.refresh(user)
-        return user
+        async with get_db() as session:
+            session.add(user)
+            await session.commit()
+            await session.refresh(user)
+            return user
 
     async def get_by_id(self, user_id: int) -> Optional[User]:
         """Находит пользователя по ID."""
         stmt = select(User).where(User.id == user_id)
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def get_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         """Находит пользователя по Telegram ID."""
         stmt = select(User).where(User.telegram_id == telegram_id)
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def update(self, user_id: int, **kwargs) -> bool:
         """Обновляет данные пользователя."""
         stmt = update(User).where(User.id == user_id).values(**kwargs)
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
 
-    async def delete(self, user_id: int) -> bool:
+    async def delete_soft(self, user_id: int) -> bool:
         """Удаляет пользователя (мягкое удаление)."""
         stmt = update(User).where(User.id == user_id).values(is_active=False)
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    async def delete_hard(self, user_id: int) -> bool:
+        """Удаляет пользователя (жесткое удаление)."""
+        stmt = delete(User).where(User.id == user_id)
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
 
     async def get_all_participants(self) -> List[User]:
         """Возвращает всех участников."""
@@ -56,8 +69,9 @@ class UserRepository:
             User.role == UserRole.PARTICIPANT,
             User.is_active == True
         )
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     async def get_users_looking_for_team(self) -> List[User]:
         """Возвращает участников, ищущих команду."""
@@ -66,8 +80,9 @@ class UserRepository:
             User.participant_status == ParticipantStatus.LOOKING_FOR_TEAM,
             User.is_active == True
         )
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     async def get_users_by_team(self, team_id: int) -> List[User]:
         """Возвращает всех участников команды."""
@@ -75,8 +90,9 @@ class UserRepository:
             User.team_id == team_id,
             User.is_active == True
         )
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     async def update_skills(self, user_id: int, skills: List[str]) -> bool:
         """Обновляет навыки пользователя."""

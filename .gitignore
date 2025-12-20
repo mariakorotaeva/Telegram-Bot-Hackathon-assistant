@@ -1,3 +1,6 @@
+# DB
+postg/
+
 # Environment
 .env
 .venv
