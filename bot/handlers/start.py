@@ -203,7 +203,7 @@ async def show_all_users(message: Message):
         )
         return
     
-    participants = await user_serv.get_all_participants()
+    participants = await user_serv.get_all()
     if len(participants) == 0:
         await message.answer(
             "📭 <b>Нет зарегистрированных пользователей</b>",

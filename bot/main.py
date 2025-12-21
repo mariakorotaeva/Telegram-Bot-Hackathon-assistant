@@ -11,8 +11,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from bot.handlers import router
-from bot.handlers.notifications import schedule_reminder_checker
-from bot.handlers.menu import temp_users_storage
+from bot.services.notifications import schedule_reminder_checker
 
 from bot.handlers.ai_assistant import initialize_assistant
 
@@ -49,7 +48,7 @@ async def main() -> None:
     dp.shutdown.register(on_shutdown)
     
     bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    asyncio.create_task(schedule_reminder_checker(bot, temp_users_storage))
+    asyncio.create_task(schedule_reminder_checker(bot))
     logger.info("✅ Бот запущен и готов к работе")
     logger.info("📋 Для меню используйте /menu")
     await dp.start_polling(bot)

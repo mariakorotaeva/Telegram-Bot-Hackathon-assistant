@@ -11,13 +11,14 @@ import uuid
 
 from models.poll import Poll
 from models.poll_vote import PollVote
+from config.database import get_db
 
 
 class PollRepository:
     """Репозиторий для работы с таблицей polls."""
 
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self):
+        ...
 
     # ==================== CRUD ОПЕРАЦИИ ====================
 
@@ -27,10 +28,11 @@ class PollRepository:
         if not poll.poll_id:
             poll.poll_id = f"poll_{uuid.uuid4().hex[:8]}"
 
-        self.session.add(poll)
-        await self.session.commit()
-        await self.session.refresh(poll)
-        return poll
+        async with get_db as session:
+            session.add(poll)
+            await session.commit()
+            await session.refresh(poll)
+            return poll
 
     async def get_by_id(self, poll_id: int) -> Optional[Poll]:
         """Находит опрос по ID."""

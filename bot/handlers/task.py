@@ -25,7 +25,7 @@ class TaskStates(StatesGroup):
 def get_organizer_tasks_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="➕ Создать задачу", callback_data="org_create_task")
-    builder.button(text="✏️ Редактировать задачу", callback_data="org_edit_task")
+    # builder.button(text="✏️ Редактировать задачу", callback_data="org_edit_task")
     builder.button(text="📊 Статистика задач", callback_data="org_tasks_stats")
     builder.button(text="🔙 Назад в меню", callback_data="back_to_menu")
     builder.adjust(1)
@@ -33,7 +33,7 @@ def get_organizer_tasks_menu():
 
 @router.callback_query(F.data == "admin_manage_tasks")
 async def manage_tasks(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
     user = await UserService().get_by_tg_id(user_id)
     
     if not user or user.role != "organizer":
@@ -150,7 +150,7 @@ async def process_task_assignee(callback: CallbackQuery, state: FSMContext):
             assign_text = "всем волонтёрам (пока 0 чел.)"
     else:
         # Ищем волонтера по ID
-        volunteer = await UserService().get_by_tg_id(assignee)
+        volunteer = await UserService().get_by_tg_id(int(assignee))
         volunteer_name = volunteer.full_name if volunteer else f"Волонтер {assignee}"
         assign_text = f"волонтёру {volunteer_name}"
     
@@ -180,6 +180,7 @@ def get_tasks_list_keyboard(action: str, tasks: List):
     builder.adjust(1)
     return builder.as_markup()
 
+# TODO: REMOVE
 @router.callback_query(F.data == "org_edit_task")
 async def edit_task_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -440,7 +441,7 @@ async def show_tasks_stats(callback: CallbackQuery):
         if task.assigned_to == "all":
             assigned = "👥 Всем"
         else:
-            volunteer = await UserService().get_by_tg_id(task.assigned_to)
+            volunteer = await UserService().get_by_tg_id(int(task.assigned_to))
             volunteer_name = volunteer.full_name if volunteer else f"Волонтер {task.assigned_to}"
             assigned = f"👤 {volunteer_name}"
         
@@ -549,14 +550,14 @@ async def view_task_details(callback: CallbackQuery):
 def get_volunteer_tasks_menu():
     builder = InlineKeyboardBuilder()
     builder.button(text="📋 Текущие задачи", callback_data="volunteer_current_tasks")
-    builder.button(text="✅ Выполненные задачи", callback_data="volunteer_completed_tasks")
+    # builder.button(text="✅ Выполненные задачи", callback_data="volunteer_completed_tasks")
     builder.button(text="🔙 Назад в меню", callback_data="back_to_menu")
     builder.adjust(1)
     return builder.as_markup()
 
 @router.callback_query(F.data == "volunteer_tasks")
 async def volunteer_tasks_menu(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
     user = await UserService().get_by_tg_id(user_id)
     
     if not user or user.role != "volunteer":
@@ -573,7 +574,7 @@ async def volunteer_tasks_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "volunteer_current_tasks")
 async def show_volunteer_current_tasks(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
     user = await UserService().get_by_tg_id(user_id)
     
     if not user or user.role != "volunteer":
@@ -594,7 +595,7 @@ async def show_volunteer_current_tasks(callback: CallbackQuery):
         return
     
     # Разделяем на персональные и групповые
-    personal_tasks = [task for task in active_tasks if task.assigned_to == user_id]
+    personal_tasks = [task for task in active_tasks if task.assigned_to == str(user_id)]
     group_tasks = [task for task in active_tasks if task.assigned_to == "all"]
     
     # Формируем текст
@@ -603,12 +604,20 @@ async def show_volunteer_current_tasks(callback: CallbackQuery):
     if personal_tasks:
         tasks_text += "👤 <b>Персональные задачи:</b>\n"
         for task in personal_tasks:
-            tasks_text += f"❌ {task.title}\n"
+            if str(user.telegram_id) in set(task.completed_by):
+                status = "✔️"
+            else:
+                status = "❌"
+            tasks_text += f"{status} {task.title}\n"
     
     if group_tasks:
         tasks_text += "\n👥 <b>Задачи для всех волонтёров:</b>\n"
         for task in group_tasks:
-            tasks_text += f"❌ {task.title}\n"
+            if str(user.telegram_id) in set(task.completed_by):
+                status = "✔️"
+            else:
+                status = "❌"
+            tasks_text += f"{status} {task.title}\n"
     
     builder = InlineKeyboardBuilder()
     
@@ -686,9 +695,10 @@ async def complete_task(callback: CallbackQuery):
     
     await callback.answer()
 
+# TODO: REMOVE
 @router.callback_query(F.data == "volunteer_completed_tasks")
 async def show_volunteer_completed_tasks(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
     user = await UserService().get_by_tg_id(user_id)
     
     if not user or user.role != "volunteer":

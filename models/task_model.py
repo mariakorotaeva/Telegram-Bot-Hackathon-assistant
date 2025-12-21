@@ -1,10 +1,9 @@
 from sqlalchemy import Column, Integer, String, DateTime, JSON, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
-from sqlalchemy.ext.declarative import declarative_base
+from config.database import Base
 from datetime import datetime
 from typing import List, Optional
 
-Base = declarative_base()
 
 class TaskModel(Base):
     """Модель задачи в базе данных"""

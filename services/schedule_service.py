@@ -15,6 +15,8 @@ from repositories.user_repository import UserRepository
 from models.schedule import Event, EventLog, EventNotification, EventChangeType
 from models.user import User, UserRole
 
+from .user_service import UserService
+
 TIMEZONE_OFFSETS = {
     "UTC+3": 3, "UTC+4": 4, "UTC+5": 5, "UTC+6": 6,
     "UTC+7": 7, "UTC+8": 8, "UTC+9": 9, "UTC+10": 10,
@@ -88,9 +90,13 @@ class ScheduleService:
         result = []
         for event in events:
             event_dict = event.to_dict(user_timezone)
-            # Добавляем конвертированное время
-            start_local, end_local = self._convert_time_for_user(
+            start_local = self._convert_time_for_user(
                 event.start_time,
+                event.creator_timezone,
+                user_timezone
+            )
+            end_local = self._convert_time_for_user(
+                event.end_time,
                 event.creator_timezone,
                 user_timezone
             )
@@ -140,23 +146,23 @@ class ScheduleService:
             events_by_day[day].append(event)
         
         for day, day_events in sorted(events_by_day.items()):
-        text += f"<b>📆 {day}</b>\n"
-        for event in day_events:
-            start_time_local  = _convert_time_for_user(
-                event.start_time, 
-                event.creator_timezone, 
-                user_timezine)
-            
-            end_time_local = _convert_time_for_user(
-                event.start_time, 
-                event.creator_timezone, 
-                user_timezine)
-            
-            start_str = start_time_local.strftime("%H:%M")
-            end_str = end_time_local.strftime("%H:%M")
-            text += f"\n<b>• {start_str} - {end_str}</b>\n<i>{event['title']}</i>\n"
-            if event.get("location"):
-                text += f"📍 {event['location']}\n"
+            text += f"<b>📆 {day}</b>\n"
+            for event in day_events:
+                start_time_local  = _convert_time_for_user(
+                    event.start_time, 
+                    event.creator_timezone, 
+                    user_timezine)
+                
+                end_time_local = _convert_time_for_user(
+                    event.start_time, 
+                    event.creator_timezone, 
+                    user_timezine)
+                
+                start_str = start_time_local.strftime("%H:%M")
+                end_str = end_time_local.strftime("%H:%M")
+                text += f"\n<b>• {start_str} - {end_str}</b>\n<i>{event['title']}</i>\n"
+                if event.get("location"):
+                    text += f"📍 {event['location']}\n"
         
         return text
 
@@ -270,8 +276,7 @@ class ScheduleService:
         location: str = "",
         created_by: str = "",
         creator_timezone: str = "UTC+3",
-        bot: Optional[Bot] = None,
-        temp_users_storage: Optional[Dict] = None
+        bot: Optional[Bot] = None
     ) -> Dict[str, Any]:
         """Добавляет событие с отправкой уведомлений."""
         # Создаем событие
@@ -284,7 +289,7 @@ class ScheduleService:
         
         # Отправляем уведомления если есть бот
         if bot and event:
-            await self._notify_new_event(bot, event, temp_users_storage)
+            await self._notify_new_event(bot, event)
         
         return event_dict
 
@@ -310,7 +315,7 @@ class ScheduleService:
         
         if success and changes and bot and old_event:
             new_event = await self.schedule_repo.get_event_by_id(event_id)
-            await self._notify_event_updated(bot, new_event, changes, temp_users_storage)
+            await self._notify_event_updated(bot, new_event, changes)
         
         return success
 
@@ -330,8 +335,8 @@ class ScheduleService:
         
         success = await self.delete_event(event_id)
         
-        if success and bot and temp_users_storage:
-            await self._notify_event_cancelled(bot, event_data, temp_users_storage)
+        if success and bot:
+            await self._notify_event_cancelled(bot, event_data)
         
         return success
 
@@ -340,30 +345,29 @@ class ScheduleService:
     async def _notify_new_event(
         self, 
         bot: Bot, 
-        event: Event,
-        temp_users_storage: Dict
+        event: Event
     ):
         """Отправляет уведомления о новом событии."""
         # Получаем пользователей, которым нужно отправить уведомление
         if "all" in event.visibility:
             # Временно: используем temp_users_storage
-            for user_id, user_data in temp_users_storage.items():
+            users = await UserService().get_all()
+            for user in users:
                 try:
-                    if event.is_visible_for_role(user_data["role"]):
+                    if event.is_visible_for_role(user.role):
                         await bot.send_message(
-                            chat_id=int(user_id),
-                            text=f"📅 <b>Новое событие!</b>\n\n{self.format_event_for_display(event.to_dict(), user_data.get('timezone', 'UTC+3'))}",
+                            chat_id=int(user.telegram_id),
+                            text=f"📅 <b>Новое событие!</b>\n\n{self.format_event_for_display(event.to_dict(), user.timezone if user.timezone else 'UTC+3')}",
                             parse_mode="HTML"
                         )
                 except Exception as e:
-                    print(f"Error sending notification to {user_id}: {e}")
+                    print(f"Error sending notification to {user.telegram_id}: {e}")
 
     async def _notify_event_updated(
         self,
         bot: Bot,
         event: Event,
-        changes: Dict[str, Any],
-        temp_users_storage: Dict
+        changes: Dict[str, Any]
     ):
         """Отправляет уведомления об изменении события."""
         # Определяем, что изменилось
@@ -381,42 +385,42 @@ class ScheduleService:
             return
         
         # Отправляем уведомления
-        for user_id, user_data in temp_users_storage.items():
+        users = await UserService().get_all()
+        for user in users:
             try:
-                if event.is_visible_for_role(user_data["role"]):
+                if event.is_visible_for_role(user.role):
                     await bot.send_message(
-                        chat_id=int(user_id),
+                        chat_id=int(user.telegram_id),
                         text=f"📅 <b>Событие обновлено!</b>\n\n"
                              f"Изменения: {', '.join(change_messages)}\n\n"
-                             f"{self.format_event_for_display(event.to_dict(), user_data.get('timezone', 'UTC+3'))}",
+                             f"{self.format_event_for_display(event.to_dict(), user.timezone if user.timezone else 'UTC+3')}",
                         parse_mode="HTML"
                     )
             except Exception as e:
-                print(f"Error sending update notification to {user_id}: {e}")
+                print(f"Error sending update notification to {user.telegram_id}: {e}")
 
     async def _notify_event_cancelled(
         self,
         bot: Bot,
-        event_data: Dict[str, Any],
-        temp_users_storage: Dict
+        event_data: Dict[str, Any]
     ):
         """Отправляет уведомления об отмене события."""
-        for user_id, user_data in temp_users_storage.items():
+        users = await UserService().get_all()
+        for user in users:
             try:
                 # Проверяем видимость события для пользователя
                 visibility = event_data.get("visibility", [])
-                user_role = user_data["role"]
                 
-                if "all" in visibility or user_role in visibility:
+                if "all" in visibility or user.role in visibility:
                     await bot.send_message(
-                        chat_id=int(user_id),
+                        chat_id=int(user.telegram_id),
                         text=f"❌ <b>Событие отменено!</b>\n\n"
                              f"<b>{event_data['title']}</b>\n"
                              f"🕒 {event_data['start_time'].strftime('%d.%m %H:%M')}",
                         parse_mode="HTML"
                     )
             except Exception as e:
-                print(f"Error sending cancellation notification to {user_id}: {e}")
+                print(f"Error sending cancellation notification to {user.telegram_id}: {e}")
 
     # ==================== ДОПОЛНИТЕЛЬНЫЕ МЕТОДЫ ====================
 
@@ -432,8 +436,13 @@ class ScheduleService:
         result = []
         for event in events:
             event_dict = event.to_dict(user_timezone)
-            start_local, end_local = self._convert_time_for_user(
+            start_local = self._convert_time_for_user(
                 event.start_time,
+                event.creator_timezone,
+                user_timezone
+            )
+            end_local = self._convert_time_for_user(
+                event.end_time,
                 event.creator_timezone,
                 user_timezone
             )
@@ -465,7 +474,3 @@ class ScheduleService:
                             )
                         except Exception as e:
                             print(f"Error sending reminder to {user_id}: {e}")
-
-
-# Создаем глобальный экземпляр сервиса
-schedule_service = ScheduleService()

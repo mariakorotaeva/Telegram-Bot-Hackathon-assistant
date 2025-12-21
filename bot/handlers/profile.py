@@ -72,7 +72,8 @@ async def start_edit_name(callback: CallbackQuery, state: FSMContext):
 async def process_new_name(message: Message, state: FSMContext):
     new_name = message.text.strip()
     user_id = int(message.from_user.id)
-    user = await UserService().get_by_tg_id(user_id)
+    user_serv = UserService()
+    user = await user_serv.get_by_tg_id(user_id)
     
     if not user:
         await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
@@ -83,7 +84,7 @@ async def process_new_name(message: Message, state: FSMContext):
         await message.answer(error_message)
         return
     
-    user.full_name = new_name
+    await user_serv.update_user_by_tg_id(user_id, full_name=new_name)
     
     await state.clear()
     
@@ -116,7 +117,8 @@ async def start_edit_timezone(callback: CallbackQuery):
 async def process_new_timezone(callback: CallbackQuery):
     tz_key = callback.data.replace("profile_tz_", "")
     user_id = int(callback.from_user.id)
-    user = await UserService().get_by_tg_id(user_id)
+    user_serv = UserService()
+    user = await user_serv.get_by_tg_id(user_id)
     
     if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start")
@@ -126,7 +128,7 @@ async def process_new_timezone(callback: CallbackQuery):
         await callback.answer("❌ Неверный часовой пояс!", show_alert=True)
         return
     
-    user.timezone = tz_key
+    await user_serv.update_user_by_tg_id(user_id, timezone=tz_key)
     
     await callback.message.edit_text(
         f"✅ <b>Часовой пояс успешно изменен!</b>\n\n"
@@ -164,7 +166,8 @@ async def start_edit_role(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("profile_role_"))
 async def process_new_role(callback: CallbackQuery):
     user_id = int(callback.from_user.id)
-    user = await UserService().get_by_tg_id(user_id)
+    user_serv = UserService()
+    user = await user_serv.get_by_tg_id(user_id)
 
     if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
@@ -176,7 +179,7 @@ async def process_new_role(callback: CallbackQuery):
         await callback.answer("❌ Неверная роль!", show_alert=True)
         return
     
-    user.role = role_key
+    await user_serv.update_user_by_tg_id(user_id, role=role_key)
     
     await callback.message.edit_text(
     f"✅ <b>Роль успешно изменена!</b>\n\n"

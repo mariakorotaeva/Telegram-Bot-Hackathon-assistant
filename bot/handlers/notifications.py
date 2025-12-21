@@ -9,19 +9,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 from ..services.schedule_service import schedule_service, TIMEZONE_OFFSETS
+from ..services.notifications import notifications_storage
+from services.user_service import UserService
 
 router = Router()
-
-notifications_storage = {
-    "settings": {},
-    "sent_reminders": {}
-}
-
-class NotificationType(Enum):
-    SCHEDULE_REMINDER = "schedule_reminder"
-    NEW_EVENT = "new_event"
-    EVENT_UPDATED = "event_updated"
-    EVENT_CANCELLED = "event_cancelled"
 
 def get_default_notification_settings(role: str = "participant"):
     default_settings = {
@@ -45,104 +36,104 @@ class NotificationStates(StatesGroup):
     editing_reminders = State()
     editing_types = State()
 
-async def send_notification(
-    bot: Bot,
-    user_id: str,
-    title: str,
-    message: str,
-    notification_type: NotificationType = NotificationType.SCHEDULE_REMINDER,
-    user_role: str = "participant"
-):
-    try:
-        settings = notifications_storage["settings"].get(user_id, get_default_notification_settings(user_role))
+# async def send_notification(
+#     bot: Bot,
+#     user_id: str,
+#     title: str,
+#     message: str,
+#     notification_type: NotificationType = NotificationType.SCHEDULE_REMINDER,
+#     user_role: str = "participant"
+# ):
+#     try:
+#         settings = notifications_storage["settings"].get(user_id, get_default_notification_settings(user_role))
         
-        if not settings.get("enabled", True):
-            return False
+#         if not settings.get("enabled", True):
+#             return False
         
-        if notification_type == NotificationType.NEW_EVENT and not settings.get("new_event_enabled", True):
-            return False
-        elif notification_type == NotificationType.EVENT_UPDATED and not settings.get("event_updated_enabled", True):
-            return False
-        elif notification_type == NotificationType.EVENT_CANCELLED and not settings.get("event_cancelled_enabled", True):
-            return False
+#         if notification_type == NotificationType.NEW_EVENT and not settings.get("new_event_enabled", True):
+#             return False
+#         elif notification_type == NotificationType.EVENT_UPDATED and not settings.get("event_updated_enabled", True):
+#             return False
+#         elif notification_type == NotificationType.EVENT_CANCELLED and not settings.get("event_cancelled_enabled", True):
+#             return False
         
-        await bot.send_message(
-            user_id,
-            f"<b>{title}</b>\n\n{message}",
-            parse_mode="HTML"
-        )
-        return True
-    except Exception as e:
-        print(f"Error sending notification to {user_id}: {e}")
-        return False
+#         await bot.send_message(
+#             user_id,
+#             f"<b>{title}</b>\n\n{message}",
+#             parse_mode="HTML"
+#         )
+#         return True
+#     except Exception as e:
+#         print(f"Error sending notification to {user_id}: {e}")
+#         return False
 
-async def check_and_send_reminders(bot: Bot, temp_users_storage: Dict):
-    current_time_utc = datetime.utcnow()
+# async def check_and_send_reminders(bot: Bot, temp_users_storage: Dict):
+#     current_time_utc = datetime.utcnow()
     
-    for user_id, user_data in temp_users_storage.items():
-        settings = notifications_storage["settings"].get(user_id, get_default_notification_settings())
+#     for user_id, user_data in temp_users_storage.items():
+#         settings = notifications_storage["settings"].get(user_id, get_default_notification_settings())
         
-        if not settings.get("enabled", True):
-            continue
+#         if not settings.get("enabled", True):
+#             continue
             
-        role = user_data.get("role", "participant")
-        user_timezone = user_data.get("timezone", "UTC+3")
+#         role = user_data.get("role", "participant")
+#         user_timezone = user_data.get("timezone", "UTC+3")
         
-        events = schedule_service.get_events_for_role(role, user_timezone)
+#         events = schedule_service.get_events_for_role(role, user_timezone)
         
-        for event in events:
-            creator_tz = event.get('creator_timezone', 'UTC+3')
-            creator_offset = TIMEZONE_OFFSETS.get(creator_tz, 3)
+#         for event in events:
+#             creator_tz = event.get('creator_timezone', 'UTC+3')
+#             creator_offset = TIMEZONE_OFFSETS.get(creator_tz, 3)
             
-            event_time_utc = event['start_time'] - timedelta(hours=creator_offset)
+#             event_time_utc = event['start_time'] - timedelta(hours=creator_offset)
             
-            time_diff_seconds = (event_time_utc - current_time_utc).total_seconds()
+#             time_diff_seconds = (event_time_utc - current_time_utc).total_seconds()
             
-            if time_diff_seconds <= 0:
-                continue
+#             if time_diff_seconds <= 0:
+#                 continue
             
-            reminder_minutes = settings.get("reminder_minutes", get_default_notification_settings()["reminder_minutes"])
+#             reminder_minutes = settings.get("reminder_minutes", get_default_notification_settings()["reminder_minutes"])
             
-            for reminder_mins in reminder_minutes:
-                reminder_seconds = reminder_mins * 60
+#             for reminder_mins in reminder_minutes:
+#                 reminder_seconds = reminder_mins * 60
                 
-                seconds_from_reminder = time_diff_seconds - reminder_seconds
+#                 seconds_from_reminder = time_diff_seconds - reminder_seconds
                 
-                if -30 <= seconds_from_reminder <= 0:
-                    sent_key = f"{event['id']}:{reminder_mins}"
-                    user_sent = notifications_storage["sent_reminders"].setdefault(user_id, set())
+#                 if -30 <= seconds_from_reminder <= 0:
+#                     sent_key = f"{event['id']}:{reminder_mins}"
+#                     user_sent = notifications_storage["sent_reminders"].setdefault(user_id, set())
                     
-                    if sent_key not in user_sent:
-                        start_str = event['start_time'].strftime("%d.%m.%Y %H:%M")
-                        message = f"<b>{event['title']}</b>\n🕒 Начало: {start_str}\n"
+#                     if sent_key not in user_sent:
+#                         start_str = event['start_time'].strftime("%d.%m.%Y %H:%M")
+#                         message = f"<b>{event['title']}</b>\n🕒 Начало: {start_str}\n"
                         
-                        if event.get("location"):
-                            message += f"📍 Место: {event['location']}\n"
+#                         if event.get("location"):
+#                             message += f"📍 Место: {event['location']}\n"
                         
-                        if event.get("description"):
-                            desc = event['description'][:200]
-                            if len(event['description']) > 200:
-                                desc += "..."
-                            message += f"\n{desc}\n"
+#                         if event.get("description"):
+#                             desc = event['description'][:200]
+#                             if len(event['description']) > 200:
+#                                 desc += "..."
+#                             message += f"\n{desc}\n"
                         
-                        try:
-                            await bot.send_message(
-                                user_id,
-                                f"🔔 <b>Напоминание: через {reminder_mins} минут</b>\n\n{message}",
-                                parse_mode="HTML"
-                            )
-                            user_sent.add(sent_key)
-                        except Exception:
-                            pass
+#                         try:
+#                             await bot.send_message(
+#                                 user_id,
+#                                 f"🔔 <b>Напоминание: через {reminder_mins} минут</b>\n\n{message}",
+#                                 parse_mode="HTML"
+#                             )
+#                             user_sent.add(sent_key)
+#                         except Exception:
+#                             pass
 
-async def schedule_reminder_checker(bot: Bot, temp_users_storage: Dict):
-    while True:
-        try:
-            await check_and_send_reminders(bot, temp_users_storage)
-        except Exception as e:
-            print(f"Error in reminder checker: {e}")
+# async def schedule_reminder_checker(bot: Bot, temp_users_storage: Dict):
+#     while True:
+#         try:
+#             await check_and_send_reminders(bot, temp_users_storage)
+#         except Exception as e:
+#             print(f"Error in reminder checker: {e}")
         
-        await asyncio.sleep(30)
+#         await asyncio.sleep(30)
 
 def get_notification_settings_keyboard(user_id: str):
     settings = notifications_storage["settings"].get(user_id, get_default_notification_settings())
@@ -209,13 +200,10 @@ def get_notification_types_keyboard(settings: Dict):
 
 @router.callback_query(F.data == "menu_notifications")
 async def notifications_menu(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
-
-    from .menu import temp_users_storage as users_storage
-    user_data = users_storage.get(user_id, {})
-    role = user_data.get("role", "participant")
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    settings = notifications_storage["settings"].setdefault(user_id, get_default_notification_settings(role))
+    settings = notifications_storage["settings"].setdefault(user_id, get_default_notification_settings(user.role))
     
     status = "✅ Включены" if settings["enabled"] else "❌ Выключены"
     
@@ -253,13 +241,10 @@ async def notifications_menu(callback: CallbackQuery):
 
 @router.callback_query(F.data == "toggle_notifications")
 async def toggle_notifications(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
 
-    from .menu import temp_users_storage as users_storage
-    user_data = users_storage.get(user_id, {})
-    role = user_data.get("role", "participant")
-
-    settings = notifications_storage["settings"].setdefault(user_id, get_default_notification_settings(role))
+    settings = notifications_storage["settings"].setdefault(user_id, get_default_notification_settings(user.role))
     
     settings["enabled"] = not settings["enabled"]
     
@@ -390,113 +375,113 @@ async def back_to_notifications(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await notifications_menu(callback)
 
-async def notify_new_event(bot: Bot, event: Dict, temp_users_storage: Dict):
-    from .menu import temp_users_storage as users_storage
+# async def notify_new_event(bot: Bot, event: Dict, temp_users_storage: Dict):
+#     from .menu import temp_users_storage as users_storage
     
-    for user_id, user_data in users_storage.items():
-        role = user_data.get("role", "participant")
+#     for user_id, user_data in users_storage.items():
+#         role = user_data.get("role", "participant")
         
-        if "all" in event["visibility"] or role in event["visibility"]:
-            timezone = user_data.get("timezone", "UTC+3")
-            start_local = schedule_service._convert_time_for_user(
-                event["start_time"],
-                event.get("creator_timezone", "UTC+3"),
-                timezone
-            )
+#         if "all" in event["visibility"] or role in event["visibility"]:
+#             timezone = user_data.get("timezone", "UTC+3")
+#             start_local = schedule_service._convert_time_for_user(
+#                 event["start_time"],
+#                 event.get("creator_timezone", "UTC+3"),
+#                 timezone
+#             )
             
-            start_str = start_local.strftime("%d.%m.%Y %H:%M")
+#             start_str = start_local.strftime("%d.%m.%Y %H:%M")
             
-            message = (
-                f"<b>{event['title']}</b>\n"
-                f"🕒 Начало: {start_str}\n"
-            )
+#             message = (
+#                 f"<b>{event['title']}</b>\n"
+#                 f"🕒 Начало: {start_str}\n"
+#             )
             
-            if event.get("location"):
-                message += f"📍 Место: {event['location']}\n"
+#             if event.get("location"):
+#                 message += f"📍 Место: {event['location']}\n"
             
-            if event.get("description"):
-                message += f"\n{event['description'][:200]}\n"
+#             if event.get("description"):
+#                 message += f"\n{event['description'][:200]}\n"
             
-            await send_notification(
-                bot,
-                user_id,
-                "📢 Добавлено новое событие",
-                message,
-                NotificationType.NEW_EVENT,
-                user_role=role
-            )
+#             await send_notification(
+#                 bot,
+#                 user_id,
+#                 "📢 Добавлено новое событие",
+#                 message,
+#                 NotificationType.NEW_EVENT,
+#                 user_role=role
+#             )
 
-async def notify_event_updated(bot: Bot, event: Dict, changes: Dict, temp_users_storage: Dict):
-    from .menu import temp_users_storage as users_storage
+# async def notify_event_updated(bot: Bot, event: Dict, changes: Dict, temp_users_storage: Dict):
+#     from .menu import temp_users_storage as users_storage
     
-    for user_id, user_data in users_storage.items():
-        role = user_data.get("role", "participant")
+#     for user_id, user_data in users_storage.items():
+#         role = user_data.get("role", "participant")
         
-        if "all" in event["visibility"] or role in event["visibility"]:
-            changes_details = []
+#         if "all" in event["visibility"] or role in event["visibility"]:
+#             changes_details = []
             
-            if "title" in changes:
-                changes_details.append(f"<b>Название:</b> {event['title']}")
+#             if "title" in changes:
+#                 changes_details.append(f"<b>Название:</b> {event['title']}")
             
-            if "start_time" in changes:
-                new_time = event['start_time'].strftime('%d.%m.%Y %H:%M')
-                changes_details.append(f"<b>Время начала:</b> {new_time}")
+#             if "start_time" in changes:
+#                 new_time = event['start_time'].strftime('%d.%m.%Y %H:%M')
+#                 changes_details.append(f"<b>Время начала:</b> {new_time}")
             
-            if "location" in changes:
-                location = event.get('location')
-                if location == '':
-                    location = 'удалено'
-                changes_details.append(f"<b>Место:</b> {location}")
+#             if "location" in changes:
+#                 location = event.get('location')
+#                 if location == '':
+#                     location = 'удалено'
+#                 changes_details.append(f"<b>Место:</b> {location}")
             
-            if "description" in changes:
-                description = event.get('description', '')
-                if description:
-                    desc_preview = description[:100] + "..." if len(description) > 100 else description
-                    changes_details.append(f"<b>Описание:</b> {desc_preview}")
-                else:
-                    changes_details.append("<b>Описание:</b> удалено")
+#             if "description" in changes:
+#                 description = event.get('description', '')
+#                 if description:
+#                     desc_preview = description[:100] + "..." if len(description) > 100 else description
+#                     changes_details.append(f"<b>Описание:</b> {desc_preview}")
+#                 else:
+#                     changes_details.append("<b>Описание:</b> удалено")
             
-            if "end_time" in changes and "start_time" not in changes:
-                duration_minutes = int((event['end_time'] - event['start_time']).total_seconds() / 60)
-                hours = duration_minutes // 60
-                minutes = duration_minutes % 60
-                if hours > 0:
-                    duration_str = f"{hours}ч {minutes}м"
-                else:
-                    duration_str = f"{minutes}м"
-                changes_details.append(f"<b>Продолжительность:</b> {duration_str}")
+#             if "end_time" in changes and "start_time" not in changes:
+#                 duration_minutes = int((event['end_time'] - event['start_time']).total_seconds() / 60)
+#                 hours = duration_minutes // 60
+#                 minutes = duration_minutes % 60
+#                 if hours > 0:
+#                     duration_str = f"{hours}ч {minutes}м"
+#                 else:
+#                     duration_str = f"{minutes}м"
+#                 changes_details.append(f"<b>Продолжительность:</b> {duration_str}")
             
-            message = (
-                    f"<b>{event.get('title')}</b>\n\n"
-                    f"Новые данные:\n" + "\n".join(changes_details)
-                )
+#             message = (
+#                     f"<b>{event.get('title')}</b>\n\n"
+#                     f"Новые данные:\n" + "\n".join(changes_details)
+#                 )
             
-            await send_notification(
-                bot,
-                user_id,
-                "✏️ Изменение в расписании",
-                message,
-                NotificationType.EVENT_UPDATED,
-                user_role=role
-            )
+#             await send_notification(
+#                 bot,
+#                 user_id,
+#                 "✏️ Изменение в расписании",
+#                 message,
+#                 NotificationType.EVENT_UPDATED,
+#                 user_role=role
+#             )
 
-async def notify_event_cancelled(bot: Bot, event: Dict, temp_users_storage: Dict):
-    from .menu import temp_users_storage as users_storage
+# async def notify_event_cancelled(bot: Bot, event: Dict, temp_users_storage: Dict):
+#     from .menu import temp_users_storage as users_storage
     
-    for user_id, user_data in users_storage.items():
-        role = user_data.get("role", "participant")
+#     for user_id, user_data in users_storage.items():
+#         role = user_data.get("role", "participant")
         
-        if "all" in event["visibility"] or role in event["visibility"]:
-            message = (
-                f"<b>{event['title']}</b>\n"
-                f"Запланированное на {event['start_time'].strftime('%d.%m.%Y %H:%M')}\n"
-            )
+#         if "all" in event["visibility"] or role in event["visibility"]:
+#             message = (
+#                 f"<b>{event['title']}</b>\n"
+#                 f"Запланированное на {event['start_time'].strftime('%d.%m.%Y %H:%M')}\n"
+#             )
             
-            await send_notification(
-                bot,
-                user_id,
-                "❌ Отмена события",
-                message,
-                NotificationType.EVENT_CANCELLED,
-                user_role=role
-            )
+#             await send_notification(
+#                 bot,
+#                 user_id,
+#                 "❌ Отмена события",
+#                 message,
+#                 NotificationType.EVENT_CANCELLED,
+#                 user_role=role
+#             )

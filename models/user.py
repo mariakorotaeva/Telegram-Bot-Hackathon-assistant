@@ -144,6 +144,15 @@ class User(Base):
         cascade="all, delete-orphan"  # при удалении пользователя удаляются его заявки
     )
 
+    created_events: Mapped[List["Event"]] = relationship(
+        "Event",
+        back_populates="creator"
+    )
+    event_notifications: Mapped[List["EventNotification"]] = relationship(
+        "EventNotification",
+        back_populates="user"
+    )
+
 
 
     # Команды, где пользователь является капитаном

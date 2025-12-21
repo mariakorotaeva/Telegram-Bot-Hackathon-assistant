@@ -43,3 +43,8 @@ class UserService:
         user = await self.get_by_tg_id(tg_id)
         if user:
             await self.user_repo.delete_hard(user.id)
+
+    async def update_user_by_tg_id(self, tg_id: int, **kwargs):
+        user = await self.get_by_tg_id(tg_id)
+        if user:
+            await self.user_repo.update(user.id, **kwargs)

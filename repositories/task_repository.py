@@ -5,7 +5,7 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 
 from models.task_model import TaskModel, Task
-from database import get_db
+from config.database import get_db
 
 
 class TaskRepository:
@@ -120,7 +120,7 @@ class TaskRepository:
         """Получить активные (невыполненные) задачи по исполнителю"""
         async with get_db() as session:
             stmt = select(TaskModel).where(
-                ((TaskModel.assigned_to == assignee_id) | (TaskModel.assigned_to == "all")) &
+                ((TaskModel.assigned_to == str(assignee_id)) | (TaskModel.assigned_to == "all")) &
                 (TaskModel.is_active == True)
             ).order_by(TaskModel.created_at.desc())
             
@@ -135,7 +135,7 @@ class TaskRepository:
         """Получить выполненные задачи по исполнителю"""
         async with get_db() as session:
             stmt = select(TaskModel).where(
-                ((TaskModel.assigned_to == assignee_id) | (TaskModel.assigned_to == "all")) &
+                ((TaskModel.assigned_to == str(assignee_id)) | (TaskModel.assigned_to == "all")) &
                 (TaskModel.is_active == True)
             ).order_by(TaskModel.created_at.desc())
             

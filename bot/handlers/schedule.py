@@ -5,8 +5,10 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
 
-from .menu import temp_users_storage, back_to_menu_keyboard
+from .menu import back_to_menu_keyboard
 from bot.services.schedule_service import schedule_service
+from services.user_service import UserService
+from services.schedule_service import ScheduleService
 
 router = Router()
 
@@ -53,16 +55,15 @@ def get_edit_event_keyboard(event_id: int):
     builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
+# DONE
 @router.callback_query(F.data == "menu_schedule")
 async def show_schedule(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
-    if user_id not in temp_users_storage:
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
-    user_data = temp_users_storage[user_id]
-    role = user_data["role"]
-    user_timezone = user_data.get("timezone", "UTC+3")
-    events = schedule_service.get_events_for_role(role, user_timezone)
+    events = await ScheduleService().get_events_for_role(user.role, user.timezone)
     if not events:
         await callback.message.edit_text(
             "📅 <b>Расписание хакатона</b>\n\nНа данный момент событий нет.\n",
@@ -72,10 +73,10 @@ async def show_schedule(callback: CallbackQuery):
         await callback.answer()
         return
     text = f"📅 <b>Расписание хакатона</b>\n"
-    text += f"<i>Время показано в вашем часовом поясе ({user_timezone})</i>\n\n"
+    text += f"<i>Время показано в вашем часовом поясе ({user.timezone})</i>\n\n"
     events_by_day = {}
     for event in events:
-        start_time = event.get("start_time_local", event["start_time"])
+        start_time = event.get("start_time_local")
         day = start_time.strftime("%d.%m.%Y")
         if day not in events_by_day:
             events_by_day[day] = []
@@ -83,13 +84,13 @@ async def show_schedule(callback: CallbackQuery):
     for day, day_events in sorted(events_by_day.items()):
         text += f"<b>📆 {day}</b>\n"
         for event in day_events:
-            start_time = event.get("start_time_local", event["start_time"])
-            end_time = event.get("end_time_local", event["end_time"])
+            start_time = event.get("start_time_local")
+            end_time = event.get("end_time_local")
             start_str = start_time.strftime("%H:%M")
             end_str = end_time.strftime("%H:%M")
-            text += f"\n<b>• {start_str} - {end_str}</b>\n<i>{event['title']}</i>\n"
+            text += f"\n<b>• {start_str} - {end_str}</b>\n<i>{event.get("title")}</i>\n"
             if event.get("location"):
-                text += f"📍 {event['location']}\n"
+                text += f"📍 {event.get("location")}\n"
     await callback.message.edit_text(
         text,
         reply_markup=back_to_menu_keyboard(),
@@ -97,14 +98,16 @@ async def show_schedule(callback: CallbackQuery):
     )
     await callback.answer()
 
+# DONE
 @router.callback_query(F.data == "admin_edit_schedule")
 async def admin_schedule_menu(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
-    if user_id not in temp_users_storage:
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
-    user_data = temp_users_storage[user_id]
-    if user_data["role"] != "organizer":
+
+    if user.role != "organizer":
         await callback.answer("❌ Эта функция доступна только организаторам", show_alert=True)
         return
     await callback.message.edit_text(
@@ -114,12 +117,16 @@ async def admin_schedule_menu(callback: CallbackQuery):
     )
     await callback.answer()
 
+# DONE
 @router.callback_query(F.data == "schedule_admin_view_all")
 async def admin_view_all_events(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
-    user_data = temp_users_storage.get(user_id, {})
-    user_timezone = user_data.get("timezone", "UTC+3")
-    events = schedule_service.get_all_events()
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
+
+    events = await ScheduleService().get_all_events()
     if not events:
         await callback.message.edit_text(
             "📋 <b>Все события</b>\n\nСобытий пока нет.",
@@ -129,11 +136,11 @@ async def admin_view_all_events(callback: CallbackQuery):
         await callback.answer()
         return
     text = f"📋 <b>Все события</b>\n"
-    text += f"<i>Время показано в вашем часовом поясе ({user_timezone})</i>\n\n"
-    org_events = schedule_service.get_events_for_role("organizer", user_timezone)
+    text += f"<i>Время показано в вашем часовом поясе ({user.timezone})</i>\n\n"
+    org_events = await ScheduleService().get_events_for_role("organizer", user.timezone)
     for event in events:
         event_with_tz = next((e for e in org_events if e["id"] == event["id"]), event)
-        text += schedule_service.format_event_for_display(event_with_tz, user_timezone)
+        text += ScheduleService().format_event_for_display(event_with_tz, user.timezone)
         text += f"\n{'─' * 30}\n\n"
     await callback.message.edit_text(
         text,
@@ -250,19 +257,17 @@ async def process_visibility(callback: CallbackQuery, state: FSMContext, bot: Bo
         edit_event_id = data.get("edit_event_id")
         if edit_event_id:
             event_id = edit_event_id
-            update_success = await schedule_service.update_event_with_notification(
+            update_success = await ScheduleService().update_event_with_notification(
                 event_id=event_id,
                 bot=bot,
-                temp_users_storage=temp_users_storage,
                 visibility=visibility
             )
             if update_success:
-                event = schedule_service.get_event_by_id(event_id)
-                user_id = str(callback.from_user.id)
-                user_data = temp_users_storage.get(user_id, {})
-                user_timezone = user_data.get("timezone", "UTC+3")
+                event = await ScheduleService().get_event_by_id(int(event_id))
+                user_id = int(callback.from_user.id)
+                user = await UserService().get_by_tg_id(user_id)
                 await callback.message.edit_text(
-                    "✅ <b>Событие успешно обновлено!</b>\n\n" + schedule_service.format_event_for_display(event, user_timezone),
+                    "✅ <b>Событие успешно обновлено!</b>\n\n" + ScheduleService().format_event_for_display(event, user.timezone),
                     reply_markup=get_edit_event_keyboard(event_id),
                     parse_mode="HTML"
                 )
@@ -276,10 +281,9 @@ async def process_visibility(callback: CallbackQuery, state: FSMContext, bot: Bo
             await callback.answer()
             return
         else:
-            user_id = str(callback.from_user.id)
-            user_data = temp_users_storage.get(user_id, {})
-            creator_timezone = user_data.get("timezone", "UTC+3")
-            event = await schedule_service.add_event_with_notification(
+            user_id = int(callback.from_user.id)
+            user = await UserService().get_by_tg_id(user_id)
+            event = await ScheduleService().add_event_with_notification(
                 title=data["title"],
                 description=data.get("description", ""),
                 start_time=data["start_time"],
@@ -287,12 +291,11 @@ async def process_visibility(callback: CallbackQuery, state: FSMContext, bot: Bo
                 location=data.get("location", ""),
                 visibility=visibility,
                 created_by=user_id,
-                creator_timezone=creator_timezone,
-                bot=bot,
-                temp_users_storage=temp_users_storage
+                creator_timezone=user.timezone,
+                bot=bot
             )
             await callback.message.edit_text(
-                "✅ <b>Событие успешно добавлено!</b>\n\n" + schedule_service.format_event_for_display(event, creator_timezone),
+                "✅ <b>Событие успешно добавлено!</b>\n\n" + ScheduleService().format_event_for_display(event, user.timezone),
                 reply_markup=get_admin_schedule_keyboard(),
                 parse_mode="HTML"
             )
@@ -334,7 +337,7 @@ async def cancel_schedule_action(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "schedule_admin_edit")
 async def admin_edit_event_list(callback: CallbackQuery):
-    events = schedule_service.get_all_events()
+    events = await ScheduleService().get_all_events()
     if not events:
         await callback.message.edit_text(
             "✏️ <b>Редактирование событий</b>\n\nСобытий для редактирования нет.",
@@ -361,17 +364,16 @@ async def admin_edit_event_list(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("edit_event:"))
 async def admin_edit_event_detail(callback: CallbackQuery):
     event_id = int(callback.data.split(":")[1])
-    event = schedule_service.get_event_by_id(event_id)
+    event = await ScheduleService().get_event_by_id(event_id)
     if not event:
         await callback.answer("❌ Событие не найдено!", show_alert=True)
         return
-    user_id = str(callback.from_user.id)
-    user_data = temp_users_storage.get(user_id, {})
-    user_timezone = user_data.get("timezone", "UTC+3")
-    org_events = schedule_service.get_events_for_role("organizer", user_timezone)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    org_events = await ScheduleService().get_events_for_role("organizer", user.timezone)
     event_with_tz = next((e for e in org_events if e["id"] == event_id), event)
     text = "✏️ <b>Редактирование события</b>\n\n"
-    text += schedule_service.format_event_for_display(event_with_tz, user_timezone)
+    text += ScheduleService().format_event_for_display(event_with_tz, user.timezone)
     await callback.message.edit_text(
         text,
         reply_markup=get_edit_event_keyboard(event_id),
@@ -384,7 +386,7 @@ async def admin_edit_field(callback: CallbackQuery, state: FSMContext):
     try:
         action, event_id_str = callback.data.split(":", 1)
         event_id = int(event_id_str)
-        event = schedule_service.get_event_by_id(event_id)
+        event = await ScheduleService().get_event_by_id(event_id)
         if not event:
             await callback.answer("❌ Событие не найдено!", show_alert=True)
             return
@@ -455,10 +457,9 @@ async def process_edit_value(message: Message, state: FSMContext, bot: Bot):
                 await message.answer("❌ Название не может быть пустым!", show_alert=True)
                 return
             update_data = {action: value}
-            update_success = await schedule_service.update_event_with_notification(
+            update_success = await ScheduleService().update_event_with_notification(
                 event_id=event_id,
                 bot=bot,
-                temp_users_storage=temp_users_storage,
                 **update_data
             )
             action_display = {"title": "Название", "description": "Описание", "location": "Место"}[action]
@@ -468,13 +469,12 @@ async def process_edit_value(message: Message, state: FSMContext, bot: Bot):
             if new_start_time < now:
                 await message.answer("❌ Нельзя установить время в прошлом!", show_alert=True)
                 return
-            event = schedule_service.get_event_by_id(event_id)
+            event = await ScheduleService().get_event_by_id(event_id)
             old_duration = int((event["end_time"] - event["start_time"]).total_seconds() / 60)
             new_end_time = new_start_time + timedelta(minutes=old_duration)
-            update_success = await schedule_service.update_event_with_notification(
+            update_success = await ScheduleService().update_event_with_notification(
                 event_id=event_id,
                 bot=bot,
-                temp_users_storage=temp_users_storage,
                 start_time=new_start_time,
                 end_time=new_end_time
             )
@@ -484,12 +484,11 @@ async def process_edit_value(message: Message, state: FSMContext, bot: Bot):
             if duration <= 0:
                 await message.answer("❌ Продолжительность должна быть положительным числом!", show_alert=True)
                 return
-            event = schedule_service.get_event_by_id(event_id)
+            event = await ScheduleService().get_event_by_id(event_id)
             new_end_time = event["start_time"] + timedelta(minutes=duration)
-            update_success = await schedule_service.update_event_with_notification(
+            update_success = await ScheduleService().update_event_with_notification(
                 event_id=event_id,
                 bot=bot,
-                temp_users_storage=temp_users_storage,
                 end_time=new_end_time
             )
             action_display = "Продолжительность"
@@ -498,12 +497,11 @@ async def process_edit_value(message: Message, state: FSMContext, bot: Bot):
             await state.clear()
             return
         if update_success:
-            updated_event = schedule_service.get_event_by_id(event_id)
-            user_id = str(message.from_user.id)
-            user_data = temp_users_storage.get(user_id, {})
-            user_timezone = user_data.get("timezone", "UTC+3")
+            updated_event = await ScheduleService().get_event_by_id(event_id)
+            user_id = int(message.from_user.id)
+            user = await UserService().get_by_tg_id(user_id)
             await message.answer(
-                f"✅ <b>{action_display} обновлено!</b>\n\n" + schedule_service.format_event_for_display(updated_event, user_timezone),
+                f"✅ <b>{action_display} обновлено!</b>\n\n" + schedule_service.format_event_for_display(updated_event, user.timezone),
                 reply_markup=get_edit_event_keyboard(event_id),
                 parse_mode="HTML"
             )

@@ -253,4 +253,4 @@ class EventNotification(Base):
     # ==================== МЕТОДЫ ====================
 
     def __repr__(self) -> str:
-        return f"<EventNotification(id={self.id}, user_id={self.user_id}, event_id={self.event_id})>"ц
+        return f"<EventNotification(id={self.id}, user_id={self.user_id}, event_id={self.event_id})>"
