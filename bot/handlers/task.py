@@ -1,26 +1,16 @@
-from aiogram import Router, F
+from aiogram import Router, F, html
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.enums import ParseMode
-from typing import Dict, List
+from typing import List
 from datetime import datetime
 
-from .start import temp_users_storage
+from services.user_service import UserService
+from services.task_service import TaskService
 
 router = Router()
-
-volunteer_tasks_storage: Dict[str, Dict] = {
-    # Структура: task_id: {
-    #     "title": "Название",
-    #     "description": "Описание",
-    #     "assigned_to": ["volunteer_id1", "volunteer_id2"] или "all",
-    #     "created_by": "organizer_id",
-    #     "created_at": "дата",
-    #     "completed_by": ["volunteer_id1", ...]  # кто выполнил
-    # }
-}
 
 class TaskStates(StatesGroup):
     waiting_for_title = State()
@@ -44,8 +34,9 @@ def get_organizer_tasks_menu():
 @router.callback_query(F.data == "admin_manage_tasks")
 async def manage_tasks(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Эта функция доступна только организаторам", show_alert=True)
         return
     
@@ -92,10 +83,13 @@ async def process_task_title(message: Message, state: FSMContext):
 async def process_task_description(message: Message, state: FSMContext):
     await state.update_data(description=message.text)
     
+    # Получаем всех волонтеров из БД
+    users = await UserService().get_all()
     volunteers = []
-    for uid, data in temp_users_storage.items():
-        if data.get("role") == "volunteer":
-            volunteers.append((uid, data.get("full_name", "Аноним")))
+    
+    for user in users:
+        if user.role == "volunteer":
+            volunteers.append((str(user.telegram_id), user.full_name or f"Волонтер {user.telegram_id}"))
     
     builder = InlineKeyboardBuilder()
     
@@ -131,48 +125,56 @@ async def process_task_assignee(callback: CallbackQuery, state: FSMContext):
     assignee = callback.data.split(":")[1]
     task_data = await state.get_data()
     
-    task_id = f"task_{int(datetime.now().timestamp())}"
-    
-    volunteer_tasks_storage[task_id] = {
-        "title": task_data["title"],
-        "description": task_data["description"],
-        "assigned_to": assignee,
-        "created_by": str(callback.from_user.id),
-        "created_at": datetime.now().isoformat(),
-        "completed_by": []
-    }
+    # Создаем задачу через TaskService
+    try:
+        task = await TaskService().create_task(
+            title=task_data["title"],
+            description=task_data["description"],
+            assigned_to=assignee,
+            created_by=str(callback.from_user.id)
+        )
+    except Exception as e:
+        await callback.answer(f"❌ Ошибка при создании задачи: {e}", show_alert=True)
+        return
     
     await state.clear()
     
+    # Получаем информацию о волонтерах для отображения
+    users = await UserService().get_all()
+    volunteers_count = sum(1 for user in users if user.role == "volunteer")
+    
     if assignee == "all":
-        volunteers_count = sum(1 for data in temp_users_storage.values() if data.get("role") == "volunteer")
         if volunteers_count > 0:
             assign_text = f"всем волонтёрам ({volunteers_count} чел.)"
         else:
             assign_text = "всем волонтёрам (пока 0 чел.)"
     else:
-        volunteer_name = temp_users_storage.get(assignee, {}).get("full_name", "Волонтёр")
+        # Ищем волонтера по ID
+        volunteer = await UserService().get_by_tg_id(assignee)
+        volunteer_name = volunteer.full_name if volunteer else f"Волонтер {assignee}"
         assign_text = f"волонтёру {volunteer_name}"
     
     await callback.message.edit_text(
         f"✅ <b>Задача создана!</b>\n\n"
-        f"📌 <b>Название:</b> {task_data['title']}\n"
-        f"📝 <b>Описание:</b> {task_data['description']}\n"
-        f"👥 <b>Назначена:</b> {assign_text}",
+        f"📌 <b>Название:</b> {task.title}\n"
+        f"📝 <b>Описание:</b> {task.description}\n"
+        f"👥 <b>Назначена:</b> {assign_text}\n"
+        f"🆔 <b>ID задачи:</b> {task.telegram_id}",
         reply_markup=get_organizer_tasks_menu(),
         parse_mode="HTML"
     )
     await callback.answer()
 
-def get_tasks_list_keyboard(action: str):
+def get_tasks_list_keyboard(action: str, tasks: List):
+    """Создает клавиатуру со списком задач"""
     builder = InlineKeyboardBuilder()
     
-    for task_id, task in volunteer_tasks_storage.items():
-        if len(task["title"]) > 30:
-            display_title = task["title"][:27] + "..."
+    for task in tasks:
+        if len(task.title) > 30:
+            display_title = task.title[:27] + "..."
         else:
-            display_title = task["title"]
-        builder.button(text=f"📌 {display_title}", callback_data=f"{action}:{task_id}")
+            display_title = task.title
+        builder.button(text=f"📌 {display_title}", callback_data=f"{action}:{task.telegram_id}")
     
     builder.button(text="🔙 Назад", callback_data="admin_manage_tasks")
     builder.adjust(1)
@@ -182,7 +184,11 @@ def get_tasks_list_keyboard(action: str):
 async def edit_task_start(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     
-    if not volunteer_tasks_storage:
+    # Получаем задачи текущего организатора
+    organizer_id = str(callback.from_user.id)
+    tasks = await TaskService().get_organizer_tasks(organizer_id)
+    
+    if not tasks:
         await callback.message.edit_text(
             "📭 <b>Нет созданных задач</b>",
             reply_markup=back_to_tasks_menu_keyboard(),
@@ -194,23 +200,22 @@ async def edit_task_start(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "✏️ <b>Редактирование задачи</b>\n\n"
         "Выберите задачу для редактирования:",
-        reply_markup=get_tasks_list_keyboard("edit_task"),
+        reply_markup=get_tasks_list_keyboard("edit_task", tasks),
         parse_mode="HTML"
     )
     await callback.answer()
 
 @router.callback_query(F.data.startswith("edit_task:"))
 async def edit_task_selected(callback: CallbackQuery, state: FSMContext):
-    # НЕ ОЧИЩАЕМ СОСТОЯНИЕ ЗДЕСЬ!
-    task_id = callback.data.split(":")[1]
-    task = volunteer_tasks_storage.get(task_id)
+    task_telegram_id = callback.data.split(":")[1]
+    task = await TaskService().get_task_by_telegram_id(task_telegram_id)
     
     if not task:
         await callback.answer("❌ Задача не найдена", show_alert=True)
         return
     
     # Сохраняем task_id в состоянии
-    await state.update_data(editing_task_id=task_id)
+    await state.update_data(editing_task_id=task_telegram_id)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="📝 Изменить название", callback_data="edit_field:title")
@@ -221,17 +226,17 @@ async def edit_task_selected(callback: CallbackQuery, state: FSMContext):
     builder.adjust(1)
     
     # Формируем текст назначения
-    if task["assigned_to"] == "all":
+    if task.assigned_to == "all":
         assign_text = "всем волонтёрам"
-    elif task["assigned_to"] in temp_users_storage:
-        assign_text = temp_users_storage[task["assigned_to"]].get("full_name", "Волонтёр")
     else:
-        assign_text = "неизвестному волонтёру"
+        volunteer = await UserService().get_by_tg_id(task.assigned_to)
+        volunteer_name = volunteer.full_name if volunteer else f"Волонтер {task.assigned_to}"
+        assign_text = f"волонтёру {volunteer_name}"
     
     await callback.message.edit_text(
         f"✏️ <b>Редактирование задачи</b>\n\n"
-        f"📌 <b>Название:</b> {task['title']}\n"
-        f"📝 <b>Описание:</b> {task['description']}\n"
+        f"📌 <b>Название:</b> {task.title}\n"
+        f"📝 <b>Описание:</b> {task.description}\n"
         f"👥 <b>Назначена:</b> {assign_text}\n\n"
         f"<i>Выберите что изменить:</i>",
         reply_markup=builder.as_markup(),
@@ -243,17 +248,16 @@ async def edit_task_selected(callback: CallbackQuery, state: FSMContext):
 async def edit_field_selected(callback: CallbackQuery, state: FSMContext):
     field = callback.data.split(":")[1]
     task_data = await state.get_data()
-    task_id = task_data.get("editing_task_id")
+    task_telegram_id = task_data.get("editing_task_id")
     
-    # Если нет task_id в состоянии, пробуем получить его из callback data
-    if not task_id:
+    if not task_telegram_id:
         await callback.answer("❌ Не удалось найти задачу для редактирования", show_alert=True)
         return
     
     if field == "delete":
         # Удаляем задачу
-        if task_id in volunteer_tasks_storage:
-            del volunteer_tasks_storage[task_id]
+        success = await TaskService().delete_task(task_telegram_id)
+        if success:
             await state.clear()
             await callback.message.edit_text(
                 "✅ <b>Задача удалена</b>",
@@ -266,7 +270,7 @@ async def edit_field_selected(callback: CallbackQuery, state: FSMContext):
     
     # Сохраняем данные для редактирования
     await state.update_data(
-        editing_task_id=task_id,
+        editing_task_id=task_telegram_id,
         editing_field=field
     )
     
@@ -281,10 +285,12 @@ async def edit_field_selected(callback: CallbackQuery, state: FSMContext):
     
     if field == "assignee":
         # Для назначения показываем список волонтёров
+        users = await UserService().get_all()
         volunteers = []
-        for uid, data in temp_users_storage.items():
-            if data.get("role") == "volunteer":
-                volunteers.append((uid, data.get("full_name", "Аноним")))
+        
+        for user in users:
+            if user.role == "volunteer":
+                volunteers.append((str(user.telegram_id), user.full_name or f"Волонтер {user.telegram_id}"))
         
         builder = InlineKeyboardBuilder()
         builder.button(text="👥 Всем волонтёрам", callback_data=f"set_assignee:all")
@@ -294,7 +300,7 @@ async def edit_field_selected(callback: CallbackQuery, state: FSMContext):
             for uid, name in volunteers:
                 builder.button(text=f"👤 {name}", callback_data=f"set_assignee:{uid}")
         
-        builder.button(text="🔙 Назад", callback_data=f"edit_task:{task_id}")
+        builder.button(text="🔙 Назад", callback_data=f"edit_task:{task_telegram_id}")
         builder.adjust(1)
         
         volunteers_count = len(volunteers)
@@ -312,7 +318,8 @@ async def edit_field_selected(callback: CallbackQuery, state: FSMContext):
     else:
         # Для названия и описания просим ввести текст
         await state.set_state(TaskStates.waiting_for_edit_value)
-        current_value = volunteer_tasks_storage.get(task_id, {}).get(field, "")
+        task = await TaskService().get_task_by_telegram_id(task_telegram_id)
+        current_value = getattr(task, field, "")
         await callback.message.edit_text(
             f"✏️ Введите новое {field_name} (текущее: {current_value}):",
             reply_markup=back_to_tasks_menu_keyboard()
@@ -325,31 +332,40 @@ async def edit_field_selected(callback: CallbackQuery, state: FSMContext):
 async def set_assignee_selected(callback: CallbackQuery, state: FSMContext):
     assignee = callback.data.split(":")[1]
     task_data = await state.get_data()
-    task_id = task_data.get("editing_task_id")
+    task_telegram_id = task_data.get("editing_task_id")
     
-    if not task_id or task_id not in volunteer_tasks_storage:
+    if not task_telegram_id:
         await callback.answer("❌ Задача не найдена", show_alert=True)
         await state.clear()
         return
     
     # Обновляем задачу
-    volunteer_tasks_storage[task_id]["assigned_to"] = assignee
+    updated_task = await TaskService().update_task(
+        telegram_id=task_telegram_id,
+        assigned_to=assignee
+    )
+    
+    if not updated_task:
+        await callback.answer("❌ Ошибка при обновлении задачи", show_alert=True)
+        await state.clear()
+        return
     
     await state.clear()
     
     # Показываем обновлённую задачу
-    task = volunteer_tasks_storage[task_id]
+    task = await TaskService().get_task_by_telegram_id(task_telegram_id)
     
     if assignee == "all":
         assign_text = "всем волонтёрам"
     else:
-        volunteer_name = temp_users_storage.get(assignee, {}).get("full_name", "Волонтёр")
+        volunteer = await UserService().get_by_tg_id(assignee)
+        volunteer_name = volunteer.full_name if volunteer else f"Волонтер {assignee}"
         assign_text = f"волонтёру {volunteer_name}"
     
     await callback.message.edit_text(
         f"✅ <b>Задача обновлена!</b>\n\n"
-        f"📌 <b>Название:</b> {task['title']}\n"
-        f"📝 <b>Описание:</b> {task['description']}\n"
+        f"📌 <b>Название:</b> {task.title}\n"
+        f"📝 <b>Описание:</b> {task.description}\n"
         f"👥 <b>Назначена:</b> {assign_text}",
         reply_markup=get_organizer_tasks_menu(),
         parse_mode="HTML"
@@ -360,34 +376,42 @@ async def set_assignee_selected(callback: CallbackQuery, state: FSMContext):
 @router.message(TaskStates.waiting_for_edit_value)
 async def process_edit_value(message: Message, state: FSMContext):
     task_data = await state.get_data()
-    task_id = task_data.get("editing_task_id")
+    task_telegram_id = task_data.get("editing_task_id")
     field = task_data.get("editing_field")
     
-    if not task_id or task_id not in volunteer_tasks_storage or not field:
+    if not task_telegram_id or not field:
         await message.answer("❌ Ошибка редактирования. Попробуйте снова.")
         await state.clear()
         return
     
-    # Если редактируем название или описание
-    if field in ["title", "description"]:
-        volunteer_tasks_storage[task_id][field] = message.text
+    # Обновляем задачу
+    update_data = {field: message.text}
+    updated_task = await TaskService().update_task(
+        telegram_id=task_telegram_id,
+        **update_data
+    )
+    
+    if not updated_task:
+        await message.answer("❌ Ошибка при обновлении задачи")
+        await state.clear()
+        return
     
     await state.clear()
     
     # Показываем обновлённую задачу
-    task = volunteer_tasks_storage[task_id]
+    task = await TaskService().get_task_by_telegram_id(task_telegram_id)
     
-    if task["assigned_to"] == "all":
+    if task.assigned_to == "all":
         assign_text = "всем волонтёрам"
-    elif task["assigned_to"] in temp_users_storage:
-        assign_text = temp_users_storage[task["assigned_to"]].get("full_name", "Волонтёр")
     else:
-        assign_text = "неизвестному волонтёру"
+        volunteer = await UserService().get_by_tg_id(task.assigned_to)
+        volunteer_name = volunteer.full_name if volunteer else f"Волонтер {task.assigned_to}"
+        assign_text = f"волонтёру {volunteer_name}"
     
     await message.answer(
         f"✅ <b>Задача обновлена!</b>\n\n"
-        f"📌 <b>Название:</b> {task['title']}\n"
-        f"📝 <b>Описание:</b> {task['description']}\n"
+        f"📌 <b>Название:</b> {task.title}\n"
+        f"📝 <b>Описание:</b> {task.description}\n"
         f"👥 <b>Назначена:</b> {assign_text}",
         reply_markup=get_organizer_tasks_menu(),
         parse_mode="HTML"
@@ -397,7 +421,11 @@ async def process_edit_value(message: Message, state: FSMContext):
 
 @router.callback_query(F.data == "org_tasks_stats")
 async def show_tasks_stats(callback: CallbackQuery):
-    if not volunteer_tasks_storage:
+    organizer_id = str(callback.from_user.id)
+    stats = await TaskService().get_tasks_statistics(organizer_id)
+    tasks = await TaskService().get_organizer_tasks(organizer_id)
+    
+    if not tasks:
         await callback.message.edit_text(
             "📭 <b>Нет созданных задач</b>",
             reply_markup=get_organizer_tasks_menu(),
@@ -406,44 +434,23 @@ async def show_tasks_stats(callback: CallbackQuery):
         await callback.answer()
         return
     
-    # Считаем статистику
-    total_tasks = len(volunteer_tasks_storage)
-    completed_tasks = 0
-    not_completed_tasks = 0
-    
-    # Считаем выполнение для каждого волонтёра
-    for task in volunteer_tasks_storage.values():
-        if task["assigned_to"] == "all":
-            # Задача для всех волонтёров
-            all_volunteers = [uid for uid, data in temp_users_storage.items() if data.get("role") == "volunteer"]
-            completed_count = len(set(task.get("completed_by", [])) & set(all_volunteers))
-            if completed_count == len(all_volunteers) and all_volunteers:
-                completed_tasks += 1
-            elif completed_count > 0:
-                completed_tasks += 0.5  # Частично выполнено
-                not_completed_tasks += 0.5
-            else:
-                not_completed_tasks += 1
-        else:
-            # Задача конкретному волонтёру
-            if task["assigned_to"] in task.get("completed_by", []):
-                completed_tasks += 1
-            else:
-                not_completed_tasks += 1
-    
     # Формируем список задач
     tasks_list_text = ""
-    for task_id, task in volunteer_tasks_storage.items():
-        if task["assigned_to"] == "all":
+    for task in tasks:
+        if task.assigned_to == "all":
             assigned = "👥 Всем"
         else:
-            volunteer_name = temp_users_storage.get(task["assigned_to"], {}).get("full_name", "Волонтёр")
+            volunteer = await UserService().get_by_tg_id(task.assigned_to)
+            volunteer_name = volunteer.full_name if volunteer else f"Волонтер {task.assigned_to}"
             assigned = f"👤 {volunteer_name}"
         
         # Определяем статус
-        if task["assigned_to"] == "all":
-            all_volunteers = [uid for uid, data in temp_users_storage.items() if data.get("role") == "volunteer"]
-            completed_count = len(set(task.get("completed_by", [])) & set(all_volunteers))
+        if task.assigned_to == "all":
+            # Получаем всех волонтеров
+            users = await UserService().get_all()
+            all_volunteers = [str(user.telegram_id) for user in users if user.role == "volunteer"]
+            completed_count = len(set(task.completed_by) & set(all_volunteers))
+            
             if completed_count == len(all_volunteers) and all_volunteers:
                 status = "✅"
             elif completed_count > 0:
@@ -451,26 +458,29 @@ async def show_tasks_stats(callback: CallbackQuery):
             else:
                 status = "❌"
         else:
-            status = "✅" if task["assigned_to"] in task.get("completed_by", []) else "❌"
+            status = "✅" if task.assigned_to in task.completed_by else "❌"
         
-        tasks_list_text += f"{status} {task['title']} ({assigned})\n"
+        tasks_list_text += f"{status} {task.title} ({assigned})\n"
     
     builder = InlineKeyboardBuilder()
-    for task_id in volunteer_tasks_storage.keys():
-        if len(volunteer_tasks_storage[task_id]["title"]) > 25:
-            display_title = volunteer_tasks_storage[task_id]["title"][:22] + "..."
+    for task in tasks:
+        if len(task.title) > 25:
+            display_title = task.title[:22] + "..."
         else:
-            display_title = volunteer_tasks_storage[task_id]["title"]
-        builder.button(text=f"📄 {display_title}", callback_data=f"view_task:{task_id}")
+            display_title = task.title
+        builder.button(text=f"📄 {display_title}", callback_data=f"view_task:{task.telegram_id}")
     
     builder.button(text="🔙 Назад", callback_data="admin_manage_tasks")
     builder.adjust(1)
     
     await callback.message.edit_text(
         f"📊 <b>Статистика задач</b>\n\n"
-        f"📈 <b>Всего задач:</b> {total_tasks}\n"
-        f"✅ <b>Выполнено:</b> {int(completed_tasks)}\n"
-        f"❌ <b>Не выполнено:</b> {int(not_completed_tasks)}\n\n"
+        f"📈 <b>Всего задач:</b> {stats['total_tasks']}\n"
+        f"✅ <b>Выполнено:</b> {stats['completed_tasks']}\n"
+        f"❌ <b>Не выполнено:</b> {stats['not_completed_tasks']}\n"
+        f"📊 <b>Процент выполнения:</b> {stats['completion_rate']}%\n"
+        f"👤 <b>Персональных задач:</b> {stats['personal_tasks']}\n"
+        f"👥 <b>Групповых задач:</b> {stats['group_tasks']}\n\n"
         f"<b>Список задач:</b>\n{tasks_list_text}\n"
         f"<i>Выберите задачу для просмотра деталей:</i>",
         reply_markup=builder.as_markup(),
@@ -480,30 +490,32 @@ async def show_tasks_stats(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("view_task:"))
 async def view_task_details(callback: CallbackQuery):
-    task_id = callback.data.split(":")[1]
-    task = volunteer_tasks_storage.get(task_id)
+    task_telegram_id = callback.data.split(":")[1]
+    task = await TaskService().get_task_by_telegram_id(task_telegram_id)
     
     if not task:
         await callback.answer("❌ Задача не найдена", show_alert=True)
         return
     
     # Формируем текст назначения
-    if task["assigned_to"] == "all":
+    if task.assigned_to == "all":
         assign_text = "👥 <b>Назначена:</b> всем волонтёрам\n"
-        assigned_volunteers = [temp_users_storage[uid]["full_name"] for uid in temp_users_storage 
-                              if temp_users_storage[uid].get("role") == "volunteer"]
+        users = await UserService().get_all()
+        assigned_volunteers = [user.full_name for user in users if user.role == "volunteer"]
         if assigned_volunteers:
             assign_text += f"<b>Волонтёры:</b> {', '.join(assigned_volunteers)}\n"
         else:
             assign_text += "<b>Волонтёры:</b> пока нет зарегистрированных\n"
     else:
-        volunteer_name = temp_users_storage.get(task["assigned_to"], {}).get("full_name", "Волонтёр")
+        volunteer = await UserService().get_by_tg_id(task.assigned_to)
+        volunteer_name = volunteer.full_name if volunteer else f"Волонтер {task.assigned_to}"
         assign_text = f"👤 <b>Назначена:</b> {volunteer_name}\n"
     
     # Статус выполнения
-    if task["assigned_to"] == "all":
-        all_volunteers = [uid for uid, data in temp_users_storage.items() if data.get("role") == "volunteer"]
-        completed_count = len(set(task.get("completed_by", [])) & set(all_volunteers))
+    if task.assigned_to == "all":
+        users = await UserService().get_all()
+        all_volunteers = [str(user.telegram_id) for user in users if user.role == "volunteer"]
+        completed_count = len(set(task.completed_by) & set(all_volunteers))
         if all_volunteers:
             status_text = f"🟡 <b>Статус:</b> выполнено {completed_count}/{len(all_volunteers)} волонтёрами"
             if completed_count == len(all_volunteers):
@@ -513,18 +525,20 @@ async def view_task_details(callback: CallbackQuery):
         else:
             status_text = "⏳ <b>Статус:</b> ожидание волонтёров"
     else:
-        if task["assigned_to"] in task.get("completed_by", []):
+        if task.assigned_to in task.completed_by:
             status_text = "✅ <b>Статус:</b> выполнено"
         else:
             status_text = "❌ <b>Статус:</b> не выполнено"
     
+    created_at = datetime.fromisoformat(task.created_at) if isinstance(task.created_at, str) else task.created_at
+    
     await callback.message.edit_text(
         f"📄 <b>Детали задачи</b>\n\n"
-        f"📌 <b>Название:</b> {task['title']}\n"
-        f"📝 <b>Описание:</b> {task['description']}\n"
+        f"📌 <b>Название:</b> {task.title}\n"
+        f"📝 <b>Описание:</b> {task.description}\n"
         f"{assign_text}"
         f"{status_text}\n"
-        f"📅 <b>Создана:</b> {task['created_at'][:16]}",
+        f"📅 <b>Создана:</b> {created_at.strftime('%d.%m.%Y %H:%M')}",
         reply_markup=back_to_stats_keyboard(),
         parse_mode="HTML"
     )
@@ -542,6 +556,13 @@ def get_volunteer_tasks_menu():
 
 @router.callback_query(F.data == "volunteer_tasks")
 async def volunteer_tasks_menu(callback: CallbackQuery):
+    user_id = str(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    
+    if not user or user.role != "volunteer":
+        await callback.answer("❌ Эта функция доступна только волонтёрам", show_alert=True)
+        return
+    
     await callback.message.edit_text(
         "📋 <b>Мои задачи</b>\n\n"
         "Выберите действие:",
@@ -553,27 +574,16 @@ async def volunteer_tasks_menu(callback: CallbackQuery):
 @router.callback_query(F.data == "volunteer_current_tasks")
 async def show_volunteer_current_tasks(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    # Проверяем, что пользователь волонтёр
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "volunteer":
+    if not user or user.role != "volunteer":
         await callback.answer("❌ Эта функция доступна только волонтёрам", show_alert=True)
         return
     
-    # Находим задачи для этого волонтёра
-    personal_tasks = []
-    all_tasks = []
+    # Получаем активные задачи волонтера
+    active_tasks = await TaskService().get_volunteer_active_tasks(user_id)
     
-    for task_id, task in volunteer_tasks_storage.items():
-        # Персональные задачи
-        if task["assigned_to"] == user_id:
-            if user_id not in task.get("completed_by", []):
-                personal_tasks.append((task_id, task))
-        # Задачи для всех
-        elif task["assigned_to"] == "all":
-            if user_id not in task.get("completed_by", []):
-                all_tasks.append((task_id, task))
-    
-    if not personal_tasks and not all_tasks:
+    if not active_tasks:
         await callback.message.edit_text(
             "🎉 <b>У вас нет текущих задач!</b>\n\n"
             "Ожидайте, когда организатор создаст для вас задачи.",
@@ -583,23 +593,27 @@ async def show_volunteer_current_tasks(callback: CallbackQuery):
         await callback.answer()
         return
     
+    # Разделяем на персональные и групповые
+    personal_tasks = [task for task in active_tasks if task.assigned_to == user_id]
+    group_tasks = [task for task in active_tasks if task.assigned_to == "all"]
+    
     # Формируем текст
     tasks_text = ""
     
     if personal_tasks:
         tasks_text += "👤 <b>Персональные задачи:</b>\n"
-        for task_id, task in personal_tasks:
-            tasks_text += f"❌ {task['title']}\n"
+        for task in personal_tasks:
+            tasks_text += f"❌ {task.title}\n"
     
-    if all_tasks:
+    if group_tasks:
         tasks_text += "\n👥 <b>Задачи для всех волонтёров:</b>\n"
-        for task_id, task in all_tasks:
-            tasks_text += f"❌ {task['title']}\n"
+        for task in group_tasks:
+            tasks_text += f"❌ {task.title}\n"
     
     builder = InlineKeyboardBuilder()
     
     # Показываем кнопку "Пометить задачу выполненной" только если есть невыполненные задачи
-    if personal_tasks or all_tasks:
+    if active_tasks:
         builder.button(text="✅ Пометить задачу выполненной", callback_data="mark_task_complete")
     
     builder.button(text="🔙 Назад", callback_data="volunteer_tasks")
@@ -616,21 +630,16 @@ async def show_volunteer_current_tasks(callback: CallbackQuery):
 async def mark_task_complete_menu(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
     
-    # Находим невыполненные задачи
-    uncompleted_tasks = []
-    
-    for task_id, task in volunteer_tasks_storage.items():
-        # Проверяем, назначена ли задача этому волонтёру
-        if (task["assigned_to"] == user_id or task["assigned_to"] == "all") and user_id not in task.get("completed_by", []):
-            uncompleted_tasks.append((task_id, task))
+    # Получаем невыполненные задачи
+    uncompleted_tasks = await TaskService().get_volunteer_active_tasks(user_id)
     
     if not uncompleted_tasks:
         await callback.answer("🎉 У вас нет невыполненных задач!", show_alert=True)
         return
     
     builder = InlineKeyboardBuilder()
-    for task_id, task in uncompleted_tasks:
-        builder.button(text=f"📌 {task['title']}", callback_data=f"complete_task:{task_id}")
+    for task in uncompleted_tasks:
+        builder.button(text=f"📌 {task.title}", callback_data=f"complete_task:{task.telegram_id}")
     
     builder.button(text="🔙 Назад", callback_data="volunteer_current_tasks")
     builder.adjust(1)
@@ -645,48 +654,49 @@ async def mark_task_complete_menu(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("complete_task:"))
 async def complete_task(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
-    task_id = callback.data.split(":")[1]
+    task_telegram_id = callback.data.split(":")[1]
     
-    if task_id not in volunteer_tasks_storage:
+    task = await TaskService().get_task_by_telegram_id(task_telegram_id)
+    if not task:
         await callback.answer("❌ Задача не найдена", show_alert=True)
         return
     
-    task = volunteer_tasks_storage[task_id]
-    
     # Проверяем, назначена ли задача этому волонтёру
-    if task["assigned_to"] != user_id and task["assigned_to"] != "all":
+    if not await TaskService().is_task_assigned_to(task_telegram_id, user_id):
         await callback.answer("❌ Эта задача не назначена вам", show_alert=True)
         return
     
-    # Добавляем в список выполнивших
-    if user_id not in task.get("completed_by", []):
-        if "completed_by" not in task:
-            task["completed_by"] = []
-        task["completed_by"].append(user_id)
-        volunteer_tasks_storage[task_id] = task
-        
+    # Проверяем, не выполнена ли уже задача
+    if await TaskService().is_task_completed_by(task_telegram_id, user_id):
+        await callback.answer("✅ Вы уже выполнили эту задачу", show_alert=True)
+        return
+    
+    # Помечаем задачу как выполненную
+    success = await TaskService().mark_task_completed(task_telegram_id, user_id)
+    
+    if success:
         await callback.message.edit_text(
             f"✅ <b>Задача отмечена как выполненная!</b>\n\n"
-            f"📌 <b>Название:</b> {task['title']}",
+            f"📌 <b>Название:</b> {task.title}",
             reply_markup=get_volunteer_tasks_menu(),
             parse_mode="HTML"
         )
     else:
-        await callback.answer("✅ Вы уже выполнили эту задачу", show_alert=True)
+        await callback.answer("❌ Ошибка при отметке задачи", show_alert=True)
     
     await callback.answer()
 
 @router.callback_query(F.data == "volunteer_completed_tasks")
 async def show_volunteer_completed_tasks(callback: CallbackQuery):
     user_id = str(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    # Находим выполненные задачи
-    completed_tasks = []
+    if not user or user.role != "volunteer":
+        await callback.answer("❌ Эта функция доступна только волонтёрам", show_alert=True)
+        return
     
-    for task_id, task in volunteer_tasks_storage.items():
-        # Проверяем, назначена ли задача этому волонтёру и выполнена ли
-        if (task["assigned_to"] == user_id or task["assigned_to"] == "all") and user_id in task.get("completed_by", []):
-            completed_tasks.append((task_id, task))
+    # Получаем выполненные задачи
+    completed_tasks = await TaskService().get_volunteer_completed_tasks(user_id)
     
     if not completed_tasks:
         await callback.message.edit_text(
@@ -699,12 +709,12 @@ async def show_volunteer_completed_tasks(callback: CallbackQuery):
     
     # Формируем текст
     tasks_text = "✅ <b>Выполненные задачи:</b>\n\n"
-    for task_id, task in completed_tasks:
-        tasks_text += f"✅ {task['title']}\n"
-        if len(task['description']) > 50:
-            tasks_text += f"   <i>{task['description'][:47]}...</i>\n\n"
+    for task in completed_tasks:
+        tasks_text += f"✅ {task.title}\n"
+        if len(task.description) > 50:
+            tasks_text += f"   <i>{task.description[:47]}...</i>\n\n"
         else:
-            tasks_text += f"   <i>{task['description']}</i>\n\n"
+            tasks_text += f"   <i>{task.description}</i>\n\n"
     
     await callback.message.edit_text(
         tasks_text,

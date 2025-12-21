@@ -3,7 +3,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command
 
 from bot.services.faq_service import faq_service
-from bot.handlers.start import temp_users_storage
+from services.user_service import UserService
 
 router = Router()
 
@@ -20,16 +20,14 @@ async def show_faq_from_message(message: types.Message):
     """
     Обработчик для команды /faq - доступен только участникам
     """
-    user_id = str(message.from_user.id)
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
         return
     
-    user_data = temp_users_storage[user_id]
-    role = user_data.get("role", "participant")
-    
-    if role != "participant":
+    if user.role != "participant":
         await message.answer(
             "ℹ️ <b>FAQ доступен только участникам хакатона</b>\n\n"
             "Организаторы, менторы и волонтеры могут использовать "

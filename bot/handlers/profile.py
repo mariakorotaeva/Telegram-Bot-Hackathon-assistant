@@ -4,8 +4,9 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from .start import temp_users_storage, ROLES, TIMEZONES, validate_name
+from .start import ROLES, TIMEZONES, validate_name
 from .menu import router as menu_router
+from services.user_service import UserService
 
 router = Router()
 
@@ -14,7 +15,7 @@ class ProfileEditStates(StatesGroup):
     waiting_for_new_timezone = State()
     waiting_for_new_role = State()
 
-def get_profile_keyboard(user_data):
+def get_profile_keyboard():
     builder = InlineKeyboardBuilder()
     
     builder.button(text="✏️ Изменить ФИО", callback_data="profile_edit_name")
@@ -32,26 +33,25 @@ def get_cancel_keyboard():
 
 @router.callback_query(F.data == "menu_profile")
 async def show_profile(callback: CallbackQuery):
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
-        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start")
         return
-    
-    user_data = temp_users_storage[user_id]
     
     profile_text = (
         f"👤 <b>Ваш профиль</b>\n\n"
-        f"<b>ФИО:</b> {html.quote(user_data['full_name'])}\n"
-        f"<b>Роль:</b> {ROLES.get(user_data['role'], 'Неизвестно')}\n"
-        f"<b>Часовой пояс:</b> {TIMEZONES.get(user_data['timezone'], 'Неизвестно')}\n"
+        f"<b>ФИО:</b> {html.quote(user.full_name)}\n"
+        f"<b>Роль:</b> {ROLES.get(user.role, 'Неизвестно')}\n"
+        f"<b>Часовой пояс:</b> {TIMEZONES.get(user.timezone, 'Неизвестно')}\n"
         f"<b>Telegram ID:</b> {user_id}\n"
-        f"<b>Username:</b> @{user_data.get('username', 'отсутствует')}"
+        f"<b>Username:</b> @{user.username}"
     )
     
     await callback.message.edit_text(
         profile_text,
-        reply_markup=get_profile_keyboard(user_data),
+        reply_markup=get_profile_keyboard(),
         parse_mode="HTML"
     )
     await callback.answer()
@@ -71,14 +71,19 @@ async def start_edit_name(callback: CallbackQuery, state: FSMContext):
 @router.message(ProfileEditStates.waiting_for_new_name)
 async def process_new_name(message: Message, state: FSMContext):
     new_name = message.text.strip()
-    user_id = str(message.from_user.id)
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    
+    if not user:
+        await message.answer("❌ Сначала зарегистрируйтесь с помощью /start")
+        return
     
     is_valid, error_message = validate_name(new_name)
     if not is_valid:
         await message.answer(error_message)
         return
     
-    temp_users_storage[user_id]["full_name"] = new_name
+    user.full_name = new_name
     
     await state.clear()
     
@@ -110,13 +115,18 @@ async def start_edit_timezone(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("profile_tz_"))
 async def process_new_timezone(callback: CallbackQuery):
     tz_key = callback.data.replace("profile_tz_", "")
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+    
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start")
+        return
     
     if tz_key not in TIMEZONES:
         await callback.answer("❌ Неверный часовой пояс!", show_alert=True)
         return
     
-    temp_users_storage[user_id]["timezone"] = tz_key
+    user.timezone = tz_key
     
     await callback.message.edit_text(
         f"✅ <b>Часовой пояс успешно изменен!</b>\n\n"
@@ -128,6 +138,13 @@ async def process_new_timezone(callback: CallbackQuery):
 
 @router.callback_query(F.data == "profile_edit_role")
 async def start_edit_role(callback: CallbackQuery):
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
+
     builder = InlineKeyboardBuilder()
     
     for role_key, role_name in ROLES.items():
@@ -146,14 +163,20 @@ async def start_edit_role(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("profile_role_"))
 async def process_new_role(callback: CallbackQuery):
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
+
     role_key = callback.data.replace("profile_role_", "")
-    user_id = str(callback.from_user.id)
     
     if role_key not in ROLES:
         await callback.answer("❌ Неверная роль!", show_alert=True)
         return
     
-    temp_users_storage[user_id]["role"] = role_key
+    user.role = role_key
     
     await callback.message.edit_text(
     f"✅ <b>Роль успешно изменена!</b>\n\n"
@@ -166,23 +189,27 @@ async def process_new_role(callback: CallbackQuery):
 @router.callback_query(F.data == "profile_cancel")
 async def cancel_edit(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
     
-    user_id = str(callback.from_user.id)
-    if user_id in temp_users_storage:
-        user_data = temp_users_storage[user_id]
-        
+    if user:
         profile_text = (
             f"👤 <b>Ваш профиль</b>\n\n"
-            f"<b>ФИО:</b> {html.quote(user_data['full_name'])}\n"
-            f"<b>Роль:</b> {ROLES.get(user_data['role'], 'Неизвестно')}\n"
-            f"<b>Часовой пояс:</b> {TIMEZONES.get(user_data['timezone'], 'Неизвестно')}\n"
+            f"<b>ФИО:</b> {html.quote(user.full_name)}\n"
+            f"<b>Роль:</b> {ROLES.get(user.role, 'Неизвестно')}\n"
+            f"<b>Часовой пояс:</b> {TIMEZONES.get(user.timezone, 'Неизвестно')}\n"
             f"<b>Telegram ID:</b> {user_id}\n"
-            f"<b>Username:</b> @{user_data.get('username', 'отсутствует')}"
+            f"<b>Username:</b> @{user.username}"
         )
         
         await callback.message.edit_text(
             profile_text,
-            reply_markup=get_profile_keyboard(user_data),
+            reply_markup=get_profile_keyboard(),
             parse_mode="HTML"
         )
     else:
