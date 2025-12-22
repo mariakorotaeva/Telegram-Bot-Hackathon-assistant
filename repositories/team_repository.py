@@ -1,21 +1,15 @@
-"""
-Репозиторий для работы с командами и приглашениями.
-"""
 from sqlalchemy import select, update, delete, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Tuple
 
-from models.team import Team, TeamInvitation, InvitationStatus
+from models.team import Team
 from models.user import User
 from config.database import get_db
 
 
 class TeamRepository:
-    """Репозиторий для работы с командами."""
     
     def __init__(self): ...
-    
-    # ==================== МЕТОДЫ ДЛЯ КОМАНД ====================
     
     async def get_team_by_id(self, team_id: int) -> Optional[Team]:
         """Находит команду по ID."""
@@ -53,15 +47,13 @@ class TeamRepository:
         )
         
         async with get_db() as session:
-            # Добавляем капитана в команду
             captain_stmt = select(User).where(User.id == captain_id)
             captain_result = await session.execute(captain_stmt)
             captain = captain_result.scalar_one()
             
             session.add(team)
-            await session.flush()  # Получаем ID команды
+            await session.flush()
             
-            # Обновляем team_id у капитана
             captain.team_id = team.id
             
             await session.commit()
@@ -126,116 +118,6 @@ class TeamRepository:
         async with get_db() as session:
             result = await session.execute(stmt)
             return result.scalars().all()
-    
-    # ==================== МЕТОДЫ ДЛЯ ПРИГЛАШЕНИЙ ====================
-    
-    async def create_invitation(self, team_id: int, user_id: int, invited_by_id: int) -> TeamInvitation:
-        """Создаёт приглашение в команду."""
-        invitation = TeamInvitation(
-            team_id=team_id,
-            user_id=user_id,
-            invited_by_id=invited_by_id,
-            status=InvitationStatus.PENDING
-        )
-        
-        async with get_db() as session:
-            session.add(invitation)
-            await session.commit()
-            await session.refresh(invitation)
-            return invitation
-    
-    async def get_invitation_by_id(self, invitation_id: int) -> Optional[TeamInvitation]:
-        """Находит приглашение по ID."""
-        stmt = select(TeamInvitation).where(TeamInvitation.id == invitation_id)
-        async with get_db() as session:
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none()
-    
-    async def get_pending_invitations_for_user(self, user_id: int) -> List[TeamInvitation]:
-        """Возвращает активные приглашения пользователя."""
-        stmt = select(TeamInvitation).where(
-            and_(
-                TeamInvitation.user_id == user_id,
-                TeamInvitation.status == InvitationStatus.PENDING
-            )
-        )
-        async with get_db() as session:
-            result = await session.execute(stmt)
-            return result.scalars().all()
-    
-    async def get_pending_invitations_for_team(self, team_id: int) -> List[TeamInvitation]:
-        """Возвращает активные приглашения команды."""
-        stmt = select(TeamInvitation).where(
-            and_(
-                TeamInvitation.team_id == team_id,
-                TeamInvitation.status == InvitationStatus.PENDING
-            )
-        )
-        async with get_db() as session:
-            result = await session.execute(stmt)
-            return result.scalars().all()
-    
-    async def accept_invitation(self, invitation_id: int) -> Tuple[bool, Optional[Team]]:
-        """Принимает приглашение."""
-        async with get_db() as session:
-            # Находим приглашение
-            stmt = select(TeamInvitation).where(TeamInvitation.id == invitation_id)
-            result = await session.execute(stmt)
-            invitation = result.scalar_one_or_none()
-            
-            if not invitation or invitation.status != InvitationStatus.PENDING:
-                return False, None
-            
-            # Принимаем приглашение
-            if invitation.accept():
-                await session.commit()
-                return True, invitation.team
-            return False, None
-    
-    async def reject_invitation(self, invitation_id: int) -> bool:
-        """Отклоняет приглашение."""
-        async with get_db() as session:
-            stmt = select(TeamInvitation).where(TeamInvitation.id == invitation_id)
-            result = await session.execute(stmt)
-            invitation = result.scalar_one_or_none()
-            
-            if not invitation or invitation.status != InvitationStatus.PENDING:
-                return False
-            
-            if invitation.reject():
-                await session.commit()
-                return True
-            return False
-    
-    async def cancel_invitation(self, invitation_id: int) -> bool:
-        """Отменяет приглашение."""
-        async with get_db() as session:
-            stmt = select(TeamInvitation).where(TeamInvitation.id == invitation_id)
-            result = await session.execute(stmt)
-            invitation = result.scalar_one_or_none()
-            
-            if not invitation or invitation.status != InvitationStatus.PENDING:
-                return False
-            
-            if invitation.cancel():
-                await session.commit()
-                return True
-            return False
-    
-    async def has_pending_invitation(self, team_id: int, user_id: int) -> bool:
-        """Проверяет, есть ли активное приглашение пользователю."""
-        stmt = select(TeamInvitation).where(
-            and_(
-                TeamInvitation.team_id == team_id,
-                TeamInvitation.user_id == user_id,
-                TeamInvitation.status == InvitationStatus.PENDING
-            )
-        )
-        async with get_db() as session:
-            result = await session.execute(stmt)
-            return result.scalar_one_or_none() is not None
-    
-    # ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ====================
     
     async def is_user_in_team(self, user_id: int) -> bool:
         """Проверяет, состоит ли пользователь в команде."""

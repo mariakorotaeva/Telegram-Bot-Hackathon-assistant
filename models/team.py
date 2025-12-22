@@ -1,6 +1,3 @@
-"""
-Модель команды для хакатона.
-"""
 from sqlalchemy import String, Integer, ForeignKey, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
@@ -10,30 +7,24 @@ from config.database import Base
 
 
 class Team(Base):
-    """
-    Модель команды.
-    """
     
     __tablename__ = "teams"
     
-    # Основные поля
+    #ОСНОВНОЕ
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)  # Название команды
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
     
-    # Внешние ключи
+    #ВНЕШНИЕ КЛЮЧИ
     captain_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
-    )  # Капитан команды
+    )
     
     mentor_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL")
-    )  # Ментор команды (назначается организатором)
+    )
     
-    # Метаданные
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    
-    # Связи
+    #СВЯЗИ
     captain: Mapped["User"] = relationship(
         "User",
         foreign_keys="[Team.captain_id]",
@@ -42,7 +33,8 @@ class Team(Base):
     
     mentor: Mapped[Optional["User"]] = relationship(
         "User",
-        foreign_keys="[Team.mentor_id]"
+        foreign_keys="[Team.mentor_id]",
+        back_populates="mentored_teams"
     )
     
     members: Mapped[List["User"]] = relationship(
@@ -51,15 +43,8 @@ class Team(Base):
         foreign_keys="[User.team_id]"
     )
     
-    # Приглашения в команду
-    invitations: Mapped[List["TeamInvitation"]] = relationship(
-        "TeamInvitation",
-        back_populates="team",
-        cascade="all, delete-orphan"
-    )
-    
-    def __repr__(self) -> str:
-        return f"<Team(id={self.id}, name='{self.name}', captain_id={self.captain_id})>"
+    # def __repr__(self) -> str:
+    #     return f"<Team(id={self.id}, name='{self.name}', captain_id={self.captain_id})>"
     
     @property
     def member_count(self) -> int:
@@ -69,7 +54,7 @@ class Team(Base):
     @property
     def is_full(self) -> bool:
         """Проверяет, полная ли команда (макс 5 человек)."""
-        return self.member_count >= 5  # Обычно в хакатонах до 5 человек
+        return self.member_count >= 5
     
     def add_member(self, user: "User") -> bool:
         """Добавляет участника в команду."""

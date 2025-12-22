@@ -6,40 +6,37 @@ from typing import List, Optional
 
 
 class TaskModel(Base):
-    """Модель задачи в базе данных"""
     
     __tablename__ = "tasks"
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    telegram_id = Column(String, nullable=False)  # ID задачи для быстрого поиска
+    telegram_id = Column(String, nullable=False)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
-    assigned_to = Column(String, nullable=False)  # "all" или telegram_id волонтера
-    created_by = Column(String, nullable=False)  # telegram_id организатора
-    created_at = Column(DateTime, default=datetime.utcnow)
-    completed_by = Column(JSON, default=list)  # Список telegram_id выполнивших
+    assigned_to = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
+    completed_by = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
     
-    def __repr__(self):
-        return f"Task(id={self.id}, title={self.title}, assigned_to={self.assigned_to})"
+    # def __repr__(self):
+    #     return f"Task(id={self.id}, title={self.title}, assigned_to={self.assigned_to})"
     
-    def to_dict(self) -> dict:
-        """Преобразовать объект задачи в словарь"""
-        return {
-            "id": self.id,
-            "telegram_id": self.telegram_id,
-            "title": self.title,
-            "description": self.description,
-            "assigned_to": self.assigned_to,
-            "created_by": self.created_by,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "completed_by": self.completed_by or [],
-            "is_active": self.is_active
-        }
+    # def to_dict(self) -> dict:
+    #     """Преобразовать объект задачи в словарь"""
+    #     return {
+    #         "id": self.id,
+    #         "telegram_id": self.telegram_id,
+    #         "title": self.title,
+    #         "description": self.description,
+    #         "assigned_to": self.assigned_to,
+    #         "created_by": self.created_by,
+    #         "created_at": self.created_at.isoformat() if self.created_at else None,
+    #         "completed_by": self.completed_by or [],
+    #         "is_active": self.is_active
+    #     }
 
 
 class Task:
-    """Бизнес-модель задачи"""
     
     def __init__(
         self,
@@ -48,7 +45,6 @@ class Task:
         description: str,
         assigned_to: str,
         created_by: str,
-        created_at: Optional[datetime] = None,
         completed_by: Optional[List[str]] = None,
         is_active: bool = True
     ):
@@ -57,13 +53,13 @@ class Task:
         self.description = description
         self.assigned_to = assigned_to
         self.created_by = created_by
-        self.created_at = created_at or datetime.utcnow()
         self.completed_by = completed_by or []
         self.is_active = is_active
     
+    #ЧТО ЭТО???
+
     @classmethod
     def from_model(cls, model: TaskModel) -> 'Task':
-        """Создать бизнес-модель из модели БД"""
         return cls(
             telegram_id=model.telegram_id,
             title=model.title,
@@ -75,31 +71,31 @@ class Task:
             is_active=model.is_active
         )
     
-    def to_model(self) -> TaskModel:
-        """Преобразовать в модель БД"""
-        return TaskModel(
-            telegram_id=self.telegram_id,
-            title=self.title,
-            description=self.description,
-            assigned_to=self.assigned_to,
-            created_by=self.created_by,
-            created_at=self.created_at,
-            completed_by=self.completed_by,
-            is_active=self.is_active
-        )
+    # def to_model(self) -> TaskModel:
+    #     """Преобразовать в модель БД"""
+    #     return TaskModel(
+    #         telegram_id=self.telegram_id,
+    #         title=self.title,
+    #         description=self.description,
+    #         assigned_to=self.assigned_to,
+    #         created_by=self.created_by,
+    #         created_at=self.created_at,
+    #         completed_by=self.completed_by,
+    #         is_active=self.is_active
+    #     )
     
-    def to_dict(self) -> dict:
-        """Преобразовать в словарь"""
-        return {
-            "telegram_id": self.telegram_id,
-            "title": self.title,
-            "description": self.description,
-            "assigned_to": self.assigned_to,
-            "created_by": self.created_by,
-            "created_at": self.created_at.isoformat(),
-            "completed_by": self.completed_by,
-            "is_active": self.is_active
-        }
+    # def to_dict(self) -> dict:
+    #     """Преобразовать в словарь"""
+    #     return {
+    #         "telegram_id": self.telegram_id,
+    #         "title": self.title,
+    #         "description": self.description,
+    #         "assigned_to": self.assigned_to,
+    #         "created_by": self.created_by,
+    #         "created_at": self.created_at.isoformat(),
+    #         "completed_by": self.completed_by,
+    #         "is_active": self.is_active
+    #     }
     
     def mark_completed(self, volunteer_id: str) -> bool:
         """Пометить задачу как выполненную волонтером"""
