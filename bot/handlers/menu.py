@@ -19,7 +19,7 @@ def get_participant_menu():
     
     builder.button(text="📅 Расписание", callback_data="menu_schedule")
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
-    builder.button(text="👥 Поиск команды", callback_data="participant_team_search")
+    builder.button(text="👥 Команда", callback_data="participant_team_search")
     builder.button(text="❓ Частые вопросы", callback_data="participant_faq")
     builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
