@@ -146,12 +146,6 @@ async def show_ai_assistant(callback: CallbackQuery, state: FSMContext):
         return
     welcome_text = (
         f"🤖 <b>Я -Лама, AI Ассистент Хакатона</b>\n\n"
-        f"Задайте вопрос о хакатоне:\n"
-        f"• 📅 Расписание и даты\n"
-        f"• 🎯 Темы и направления\n"
-        f"• 👥 Команды и участники\n"
-        f"• 🏆 Призы и критерии\n"
-        f"• 📋 Правила и организация\n\n"
         f"<b>Просто напишите ваш вопрос ниже!</b>"
     )
     
@@ -192,43 +186,6 @@ async def process_ai_question(message: Message, state: FSMContext):
     
     await message.answer(response, parse_mode=ParseMode.HTML)
     await state.set_state(AIAssistantStates.waiting_for_question)
-
-@router.callback_query(F.data.startswith("ai_category_"))
-async def handle_ai_category(callback: CallbackQuery):
-    category = callback.data.replace("ai_category_", "")
-    category_names = {
-        "schedule": "📅 Расписание",
-        "topics": "🎯 Темы",
-        "teams": "👥 Команды",
-        "prizes": "🏆 Призы",
-        "rules": "📋 Правила",
-        "contacts": "📞 Контакты"
-    }
-    category_name = category_names.get(category, "🤖 Ответ")
-    if not assistant.is_available:
-        await callback.answer("❌ AI ассистент недоступен", show_alert=True)
-        return
-    await callback.answer("🔍 Ищу информацию...")
-    await callback.bot.send_chat_action(callback.message.chat.id, "typing")
-    temp_msg = await callback.message.answer("🧠 <b>Ищу ответ...</b>", parse_mode=ParseMode.HTML)
-    result = await assistant.get_standard_answer(category)
-    try:
-        await temp_msg.delete()
-    except:
-        pass
-    if result['success']:
-        response = (
-            f"<b>{category_name}</b>\n\n"
-            f"{result['answer']}\n\n"
-            f"<code>{result['response_time']}</code>"
-        )
-    else:
-        response = (
-            f"⚠️ <b>Не удалось получить информацию</b>\n\n"
-            f"{result['answer']}"
-        )
-    await callback.message.answer(response, parse_mode=ParseMode.HTML)
-    await callback.answer()
 
 @router.callback_query(F.data == "ai_back_to_menu")
 async def back_to_menu_from_ai(callback: CallbackQuery, state: FSMContext):
