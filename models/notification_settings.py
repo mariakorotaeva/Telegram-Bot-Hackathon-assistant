@@ -31,8 +31,8 @@ class NotificationSettings(Base):
     event_updated_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     event_cancelled_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     
-    # def __repr__(self) -> str:
-    #     return f"<NotificationSettings(user_id={self.user_id}, enabled={self.enabled})>"
+    def __repr__(self) -> str:
+        return f"<NotificationSettings(user_id={self.user_id}, enabled={self.enabled})>"
     
     def is_enabled_for_type(self, notification_type: str) -> bool:
         """Проверяет, включен ли конкретный тип уведомлений"""

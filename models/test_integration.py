@@ -9,7 +9,6 @@ from sqlalchemy import text
 from config.database import create_tables, engine
 from models.user import User, UserRole, ParticipantStatus
 from models.team import Team
-from models.team_application import TeamApplication, ApplicationStatus
 
 
 async def test_all_models():

@@ -12,6 +12,9 @@ import json
 from .start import temp_users_storage
 from .menu import back_to_menu_keyboard
 
+from services.user_service import UserService
+from services.poll_service import PollService
+
 router = Router()
 
 # Глобальное хранилище для опросов и их результатов
@@ -64,14 +67,14 @@ def format_results_for_organizer(poll_data: Dict) -> str:
 @router.callback_query(F.data == "admin_create_poll")
 async def admin_poll_menu(callback: CallbackQuery):
     """Меню управления опросами для организатора"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
     
-    user_data = temp_users_storage[user_id]
-    if user_data["role"] != "organizer":
+    if user.role != "organizer":
         await callback.answer("❌ Эта функция доступна только организаторам", show_alert=True)
         return
     
@@ -152,7 +155,7 @@ async def process_options(message: Message, state: FSMContext):
     
     await message.answer(
         f"📋 <b>Предпросмотр опроса</b>\n\n"
-        f"<b>Вопрос:</b> {await state.get_data('question')}\n\n"
+        f"<b>Вопрос:</b> {await state.get_data()['question']}\n\n"
         f"<b>Варианты ответов:</b>\n{options_text}\n\n"
         f"Этот опрос будет отправлен всем участникам через Telegram Poll.",
         reply_markup=builder.as_markup(),
@@ -162,9 +165,10 @@ async def process_options(message: Message, state: FSMContext):
 @router.callback_query(F.data == "send_polls_to_all")
 async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bot: Bot):
     """Отправка опроса всем пользователям"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
@@ -184,7 +188,7 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
         "question": question,
         "options": options,
         "creator_id": user_id,
-        "creator_name": temp_users_storage[user_id]["full_name"],
+        "creator_name": user.full_name,
         "created_at": datetime.now().isoformat(),
         "sent_count": 0,
         "voted_count": 0,
@@ -198,11 +202,11 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
     sent_count = 0
     failed_count = 0
     
-    for uid, user_data in temp_users_storage.items():
+    for user in await UserService().get_all():
         try:
             # Отправляем нативный опрос Telegram
             sent_poll = await bot.send_poll(
-                chat_id=int(uid),
+                chat_id=user.telegram_id,
                 question=question,
                 options=options,
                 is_anonymous=False,  # Не анонимный, чтобы видеть кто проголосовал
@@ -212,7 +216,7 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
             )
             
             # Сохраняем ID сообщения с опросом
-            poll_messages[poll_group_id][uid] = sent_poll.message_id
+            poll_messages[poll_group_id][user.telegram_id] = sent_poll.message_id
             sent_count += 1
             
             # Небольшая задержка, чтобы не превысить лимиты Telegram
@@ -290,10 +294,12 @@ async def handle_poll_answer(poll_answer: PollAnswer, bot: Bot):
 @router.callback_query(F.data.startswith("collect_results:"))
 async def collect_poll_results(callback: CallbackQuery):
     """Сбор и отображение результатов опроса"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
     poll_group_id = callback.data.split(":")[1]
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
@@ -330,10 +336,12 @@ async def collect_poll_results(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("export_results:"))
 async def export_poll_results(callback: CallbackQuery):
     """Экспорт результатов в текстовом виде"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
     poll_group_id = callback.data.split(":")[1]
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
@@ -371,13 +379,14 @@ async def export_poll_results(callback: CallbackQuery):
 @router.callback_query(F.data == "view_active_polls")
 async def view_active_polls(callback: CallbackQuery):
     """Просмотр активных опросов"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь", show_alert=True)
         return
     
-    user_role = temp_users_storage[user_id]["role"]
+    user_role = user.role
     
     # Фильтруем опросы (для участников показываем только активные)
     active_polls_list = []
@@ -431,9 +440,10 @@ async def view_active_polls(callback: CallbackQuery):
 @router.callback_query(F.data == "collect_results")
 async def collect_all_results(callback: CallbackQuery):
     """Меню сбора результатов"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     

@@ -10,6 +10,8 @@ from aiogram.fsm.state import State, StatesGroup
 
 from ..services.schedule_service import schedule_service, TIMEZONE_OFFSETS
 from services.user_service import UserService
+from services.notification_service import NotificationService
+from services.schedule_service import ScheduleService
 
 notifications_storage = {
     "settings": {},
@@ -48,40 +50,42 @@ async def send_notification(
     notification_type: NotificationType = NotificationType.SCHEDULE_REMINDER,
     user_role: str = "participant"
 ):
-    try:
-        settings = notifications_storage["settings"].get(user_id, get_default_notification_settings(user_role))
-        
-        if not settings.get("enabled", True):
-            return False
-        
-        if notification_type == NotificationType.NEW_EVENT and not settings.get("new_event_enabled", True):
-            return False
-        elif notification_type == NotificationType.EVENT_UPDATED and not settings.get("event_updated_enabled", True):
-            return False
-        elif notification_type == NotificationType.EVENT_CANCELLED and not settings.get("event_cancelled_enabled", True):
-            return False
-        
-        await bot.send_message(
-            user_id,
-            f"<b>{title}</b>\n\n{message}",
-            parse_mode="HTML"
-        )
-        return True
-    except Exception as e:
-        print(f"Error sending notification to {user_id}: {e}")
+    # try:
+    # settings = notifications_storage["settings"].get(user_id, get_default_notification_settings(user_role))
+    settings = await NotificationService().get_or_create_settings(user_id)
+
+    
+    if not settings.get("enabled", True):
         return False
+    
+    if notification_type == NotificationType.NEW_EVENT and not settings.get("new_event_enabled", True):
+        return False
+    elif notification_type == NotificationType.EVENT_UPDATED and not settings.get("event_updated_enabled", True):
+        return False
+    elif notification_type == NotificationType.EVENT_CANCELLED and not settings.get("event_cancelled_enabled", True):
+        return False
+    
+    await bot.send_message(
+        user_id,
+        f"<b>{title}</b>\n\n{message}",
+        parse_mode="HTML"
+    )
+    return True
+    # except Exception as e:
+    #     print(f"Error sending notification to {user_id}: {e}")
+    #     return False
 
 async def check_and_send_reminders(bot: Bot):
     current_time_utc = datetime.utcnow()
     all_users = await UserService().get_all()
     
     for user in all_users:
-        settings = notifications_storage["settings"].get(user.telegram_id, get_default_notification_settings())
+        settings = await NotificationService().get_or_create_settings(user.telegram_id)
         
-        if not settings.get("enabled", True):
+        if not settings.enabled:
             continue
             
-        events = schedule_service.get_events_for_role(
+        events = await ScheduleService().get_events_for_role(
             user.role, 
             user.timezone if user.timezone else "UTC+3"
         )
@@ -138,7 +142,7 @@ async def schedule_reminder_checker(bot: Bot):
         except Exception as e:
             print(f"Error in reminder checker: {e}")
         
-        await asyncio.sleep(30)
+        await asyncio.sleep(5)
 
 async def notify_new_event(bot: Bot, event: Dict):
     all_users = await UserService().get_all()
