@@ -9,6 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import uuid
 
+from models import User
 from models.poll import Poll, PollMessage
 from models.poll_vote import PollVote
 from config.database import get_db
