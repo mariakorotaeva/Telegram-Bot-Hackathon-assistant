@@ -38,10 +38,16 @@ class TeamService:
             return True, team, f"Команда '{name}' создана!"
         except Exception as e:
             return False, None, f"Ошибка при создании команды: {str(e)}"
-    
+
+    async def get_team_by_id(self, team_id: int) -> Optional[Team]:
+        return await self.team_repo.get_team_by_id(team_id)
+
     async def get_user_team(self, user_id: int) -> Optional[Team]:
         """Возвращает команду пользователя."""
         return await self.team_repo.get_user_team(user_id)
+
+    async def get_team_by_captain(self, user_id: int) -> Optional[Team]:
+        return await self.team_repo.get_team_by_captain(user_id)
     
     async def update_team_name(self, user_id: int, new_name: str) -> Tuple[bool, Optional[Team], str]:
         """Обновляет название команды."""
@@ -109,6 +115,21 @@ class TeamService:
         if success:
             return True, f"Вы покинули команду '{team.name}'"
         return False, "Не удалось покинуть команду"
+
+    async def join_team(self, user_id: int, team_id: int) -> Tuple[bool, str]:
+        """Покидает команду."""
+        user = await self.user_repo.get_by_id(user_id)
+        if not user or user.team_id:
+            return False, "Вы уже состоите в команде"
+        
+        team = await self.team_repo.get_team_by_id(team_id)
+        if not team:
+            return False, "Команда не найдена"
+        
+        success = await self.team_repo.add_user_to_team(user_id, team_id)
+        if success:
+            return True, f"Вы в команде '{team.name}'"
+        return False, "Не удалось добавиться в команду"
     
     async def dissolve_team(self, captain_id: int) -> Tuple[bool, str]:
         """Распускает команду."""

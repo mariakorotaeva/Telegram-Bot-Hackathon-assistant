@@ -159,25 +159,25 @@ async def show_faq(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "participant_team_search")
-async def team_search(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "👥 <b>Поиск команды</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+# @router.callback_query(F.data == "participant_team_search")
+# async def team_search(callback: CallbackQuery):
+#     await callback.message.edit_text(
+#         "👥 <b>Поиск команды</b>\n\n"
+#         "Заглушка",
+#         reply_markup=back_to_menu_keyboard(),
+#         parse_mode="HTML"
+#     )
+#     await callback.answer()
 
-@router.callback_query(F.data == "mentor_my_teams")
-async def mentor_my_teams(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "📋 <b>Мои команды</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+# @router.callback_query(F.data == "mentor_my_teams")
+# async def mentor_my_teams(callback: CallbackQuery):
+#     await callback.message.edit_text(
+#         "📋 <b>Мои команды</b>\n\n"
+#         "Заглушка",
+#         reply_markup=back_to_menu_keyboard(),
+#         parse_mode="HTML"
+#     )
+#     await callback.answer()
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):

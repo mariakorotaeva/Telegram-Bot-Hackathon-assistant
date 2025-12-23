@@ -155,7 +155,7 @@ async def process_options(message: Message, state: FSMContext):
     
     await message.answer(
         f"📋 <b>Предпросмотр опроса</b>\n\n"
-        f"<b>Вопрос:</b> {await state.get_data()['question']}\n\n"
+        f"<b>Вопрос:</b> {(await state.get_data())['question']}\n\n"
         f"<b>Варианты ответов:</b>\n{options_text}\n\n"
         f"Этот опрос будет отправлен всем участникам через Telegram Poll.",
         reply_markup=builder.as_markup(),

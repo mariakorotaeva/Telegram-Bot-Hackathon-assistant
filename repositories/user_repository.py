@@ -32,6 +32,12 @@ class UserRepository:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
+    async def get_by_telegram_username(self, telegram_username: str) -> Optional[User]:
+        stmt = select(User).where(User.username == telegram_username)
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
     async def update(self, user_id: int, **kwargs) -> bool:
         """Обновляет данные пользователя."""
         stmt = update(User).where(User.id == user_id).values(**kwargs)

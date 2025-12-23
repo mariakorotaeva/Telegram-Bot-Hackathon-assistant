@@ -152,6 +152,15 @@ class TeamRepository:
             result = await session.execute(stmt)
             await session.commit()
             return result.rowcount > 0
+
+    async def add_user_to_team(self, user_id: int, team_id: int) -> bool:
+        """Удаляет пользователя из команды."""
+        stmt = update(User).where(User.id == user_id).values(team_id=team_id)
+        
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
     
     async def get_available_participants(self, exclude_team_id: Optional[int] = None) -> List[User]:
         """Возвращает участников без команды."""

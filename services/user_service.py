@@ -17,6 +17,9 @@ class UserService:
         """Получить пользовате по td id"""
         return await self.user_repo.get_by_telegram_id(tg_id)
 
+    async def get_by_tg_username(self, tg_username: str):
+        return await self.user_repo.get_by_telegram_username(tg_username)
+
     async def create_user(self, tg_id: int, username: str | None, full_name: str, role: str, tz: str):
         """Создать пользователя."""
         user = User(

@@ -7,6 +7,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import StatesGroup, State
 
 from services.user_service import UserService
 from services.team_service import TeamService
@@ -14,6 +15,12 @@ from models.user import UserRole
 
 
 router = Router()
+
+class AddMemberState(StatesGroup):
+    username = State()
+
+class DeleteMemberState(StatesGroup):
+    username = State()
 
 def back_to_team_menu_keyboard():
     """Клавиатура с кнопкой назад в меню команды"""
@@ -33,11 +40,9 @@ def get_team_main_menu(is_captain: bool = False, has_team: bool = False):
     
     if has_team:
         if is_captain:
-            builder.button(text="✏️ Название команды", callback_data="team_edit_name")
+            # builder.button(text="✏️ Название команды", callback_data="team_edit_name")
             builder.button(text="👥 Участники команды", callback_data="team_manage_members")
             builder.button(text="🗑️ Удалить команду", callback_data="team_delete")
-        else:
-            builder.button(text="👥 Посмотреть команду", callback_data="team_view")
         builder.button(text="🔙 Назад в меню", callback_data="back_to_menu")
         builder.adjust(1)
     else:
@@ -125,6 +130,74 @@ async def team_menu(callback: CallbackQuery):
     )
     await callback.answer()
 
+@router.callback_query(F.data == "team_add_member")
+async def team_member_delete(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AddMemberState.username)
+    await callback.message.edit_text(
+        "Введите username пользователя, которого желаете добавить:",
+        reply_markup=back_to_main_menu_keyboard(),
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "team_delete_member")
+async def team_member_delete(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(DeleteMemberState.username)
+    await callback.message.edit_text(
+        "Введите username пользователя, которого желаете удалить:",
+        reply_markup=back_to_main_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    #await callback.answer()
+
+@router.message(AddMemberState.username)
+async def team_member_add_process_name(message: Message, state: FSMContext):
+    await state.clear()
+
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    user_to_add = await UserService().get_by_tg_username(message.text)
+    if not user_to_add:
+        await message.answer(f"❌ Пользователь @{message.text} не найден!", show_alert=True)
+        return
+
+    in_team = await TeamService().is_user_in_team(user_to_add.id)
+    if in_team:
+        await message.answer(f"❌ Пользователь @{message.text} уже состоит в команде!", show_alert=True)
+        return
+
+    success, msg = await TeamService().join_team(user_to_add.id, user.team_id)
+    if success:
+        await message.answer(f"Пользователь @{message.text} успешно добавлен в команду!", show_alert=True)
+    else:
+        await message.answer(f"Ошибка добавления пользователя @{message.text}: {msg}")
+    
+
+@router.message(DeleteMemberState.username)
+async def team_member_delete_process_name(message: Message, state: FSMContext):
+    await state.clear()
+
+    user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    user_to_delete = await UserService().get_by_tg_username(message.text)
+    if not user_to_delete:
+        await message.answer(f"❌ Пользователь @{message.text} не найден!", show_alert=True)
+        return
+
+    in_team = await TeamService().is_user_in_team(user_to_delete.id)
+    if not in_team or user_to_delete.team_id != user.team_id:
+        await message.answer(f"❌ Пользователь @{message.text} не состоит в команде!", show_alert=True)
+        return
+
+    success, msg = await TeamService().leave_team(user_to_delete.id)
+    if success:
+        await message.answer(f"Пользователь @{message.text} успешно удален из команды!", show_alert=True)
+    else:
+        await message.answer(f"Ошибка удаления пользователя @{message.text}: {msg}")
+
+
+
 @router.callback_query(F.data == "team_create")
 async def team_create(callback: CallbackQuery, state: FSMContext):
     """Создание команды"""
@@ -163,6 +236,7 @@ async def team_create(callback: CallbackQuery, state: FSMContext):
 async def process_team_name(message: Message, state: FSMContext):
     """Обработка названия команды"""
     user_id = int(message.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     data = await state.get_data()
     
     team_name = message.text.strip()
@@ -174,7 +248,7 @@ async def process_team_name(message: Message, state: FSMContext):
         return
     
     team_service = TeamService()
-    success, team, message_text = await team_service.create_team(user_id, team_name)
+    success, team, message_text = await team_service.create_team(user.id, team_name)
     
     if success:
         await message.answer(
@@ -201,8 +275,9 @@ async def process_team_name(message: Message, state: FSMContext):
 async def team_view(callback: CallbackQuery):
     """Просмотр информации о команде (для участника)"""
     user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     team_service = TeamService()
-    team = await team_service.get_user_team(user_id)
+    team = await team_service.get_user_team(user.id)
     
     if not team:
         await callback.answer("❌ У вас нет команды!", show_alert=True)
@@ -280,6 +355,7 @@ async def team_edit_name(callback: CallbackQuery, state: FSMContext):
 async def team_manage_members(callback: CallbackQuery):
     """Управление участниками команды (заглушка)"""
     user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
     # Проверяем, является ли пользователь капитаном
     team_service = TeamService()
@@ -310,7 +386,10 @@ async def team_manage_members(callback: CallbackQuery):
     )
     
     builder = InlineKeyboardBuilder()
+    builder.button(text="Добавить Участника", callback_data="team_add_member")
+    builder.button(text="Удалить Участника", callback_data="team_delete_member")
     builder.button(text="🔙 Назад", callback_data="team_menu")
+    builder.adjust(1)
     
     await callback.message.edit_text(
         text,
@@ -323,10 +402,11 @@ async def team_manage_members(callback: CallbackQuery):
 async def team_delete(callback: CallbackQuery):
     """Подтверждение удаления команды"""
     user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
     # Проверяем, является ли пользователь капитаном
-    team_service = TeamService()
-    team = await team_service.team_repo.get_team_by_captain(user.id)
+    team = await TeamService().team_repo.get_team_by_captain(user.id)
+
     
     if not team:
         await callback.answer("❌ Вы не являетесь капитаном команды!", show_alert=True)
@@ -352,17 +432,18 @@ async def team_delete_confirm(callback: CallbackQuery):
     """Подтвержденное удаление команды"""
     user_id = int(callback.from_user.id)
     team_id = int(callback.data.split(":")[1])
+
+    user = await UserService().get_by_tg_id(user_id)
     
     # Проверяем, является ли пользователь капитаном этой команды
-    team_service = TeamService()
-    team = await team_service.team_repo.get_team_by_captain(user_id)
+    team = await TeamService().get_team_by_captain(user.id)
     
     if not team or team.id != team_id:
         await callback.answer("❌ Вы не являетесь капитаном этой команды!", show_alert=True)
         return
     
     # Удаляем команду
-    success, message_text = await team_service.dissolve_team(user_id)
+    success, message_text = await TeamService().dissolve_team(user.id)
     
     if success:
         text = f"✅ {message_text}"
@@ -372,6 +453,23 @@ async def team_delete_confirm(callback: CallbackQuery):
     await callback.message.edit_text(
         text,
         reply_markup=back_to_main_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "team_profiles_stub")
+async def profile_menu_view(callback: CallbackQuery):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Моя анкета", callback_data=f"my_profile_view")
+    builder.button(text="Смотреть чужие анкеты", callback_data="other_profiles_view")
+    builder.adjust(1)
+    
+    await callback.message.edit_text(
+        f"🗑️ <b>Удаление команды</b>\n\n"
+        f"Вы уверены, что хотите удалить команду <b>'{team.name}'</b>?\n\n"
+        f"⚠️ <b>Внимание:</b> Это действие нельзя отменить. "
+        f"Все участники команды будут удалены из неё.",
+        reply_markup=builder.as_markup(),
         parse_mode="HTML"
     )
     await callback.answer()
