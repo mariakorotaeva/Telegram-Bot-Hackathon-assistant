@@ -5,10 +5,9 @@ import pytest
 import asyncio
 import sys
 import os
-from unittest.mock import AsyncMock, MagicMock, patch  # Добавьте patch здесь!
+from unittest.mock import AsyncMock, MagicMock, patch
 from aiogram.fsm.storage.memory import MemoryStorage
 
-# Add project root to Python path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 
@@ -26,14 +25,12 @@ def setup_test_environment():
     """Setup test environment variables"""
     old_env = os.environ.copy()
     
-    # Set test environment variables
     os.environ['OLLAMA_MODEL'] = 'test-model:latest'
     os.environ['OLLAMA_HOST'] = 'http://localhost:11434'
     os.environ['RESPONSE_TIMEOUT'] = '10'
     
     yield
     
-    # Restore original environment
     os.environ.clear()
     os.environ.update(old_env)
 
@@ -74,7 +71,6 @@ def state(fsm_storage):
     return FSMContext(storage=fsm_storage, key='test')
 
 
-# Define markers
 def pytest_configure(config):
     """Configure pytest markers"""
     config.addinivalue_line(

@@ -30,7 +30,7 @@ class MockOllamaHandler:
             'призы', 'команды', 'начало', 'расписание',
             'хакатон', 'что такое', 'можно ли', 'требования'
         ]
-        # Убрали 'как' из списка, так как оно слишком общее
+        
         # Ищем точные совпадения слов
         words = question_lower.split()
         return any(keyword in question_lower for keyword in cache_keywords if len(keyword) > 3)
@@ -108,7 +108,6 @@ class TestOllamaHandler:
         result = self.handler._get_cache_key(question)
         assert result == expected_key
         
-        # Test case insensitive
         assert self.handler._get_cache_key("TEST QUESTION") == expected_key
         assert self.handler._get_cache_key("  test question  ") == expected_key
     
@@ -144,17 +143,13 @@ class TestOllamaHandler:
     @pytest.mark.asyncio
     async def test_ask_cached(self):
         """Test that cached responses are returned"""
-        # First call
         result1 = await self.handler.ask("Когда начинается хакатон?")
         
-        # Manually cache it
         cache_key = self.handler._get_cache_key("Когда начинается хакатон?")
         self.handler._response_cache[cache_key] = result1
         
-        # Second call - should use cache
         result2 = await self.handler.ask("Когда начинается хакатон?")
-        
-        # Answers should be the same
+
         assert result1['answer'] == result2['answer']
     
     @pytest.mark.asyncio
@@ -165,7 +160,6 @@ class TestOllamaHandler:
     
     def test_get_model_info(self):
         """Test getting model information"""
-        # Add some cache entries
         self.handler._response_cache['key1'] = {'answer': 'test1'}
         self.handler._response_cache['key2'] = {'answer': 'test2'}
         
@@ -177,7 +171,6 @@ class TestOllamaHandler:
     
     def test_clear_cache(self):
         """Test cache clearing"""
-        # Add cache entries
         self.handler._response_cache['key1'] = {'answer': 'test1'}
         self.handler._response_cache['key2'] = {'answer': 'test2'}
         

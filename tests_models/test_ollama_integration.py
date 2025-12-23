@@ -92,14 +92,11 @@ class TestOllamaHandlerIntegration:
         question = "Какие темы хакатона?"
         cache_key = self.handler._get_cache_key(question)
         
-        # Первый запрос - не в кэше
         assert cache_key not in self.handler._response_cache
         result1 = await self.handler.ask(question)
         
-        # Теперь должен быть в кэше
         assert cache_key in self.handler._response_cache
         
-        # Второй запрос - из кэша
         result2 = await self.handler.ask(question)
         assert result1['answer'] == result2['answer']
     
@@ -111,7 +108,6 @@ class TestOllamaHandlerIntegration:
         assert cache_key not in self.handler._response_cache
         await self.handler.ask(question)
         
-        # Не должен быть в кэше
         assert cache_key not in self.handler._response_cache
     
     @pytest.mark.asyncio
@@ -121,7 +117,6 @@ class TestOllamaHandlerIntegration:
         assert info['loaded'] == False
         assert info['cache_size'] == 0
         
-        # Добавляем в кэш и проверяем
         self.handler._response_cache['test'] = {'answer': 'test'}
         
         info2 = self.handler.get_model_info()

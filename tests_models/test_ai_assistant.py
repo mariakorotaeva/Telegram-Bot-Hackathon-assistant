@@ -76,9 +76,9 @@ class TestAIAssistant:
         call_args = mock_callback.message.answer.call_args
         
         # Проверяем позиционные аргументы или keyword аргументы
-        if call_args.args:  # позиционные аргументы
+        if call_args.args:
             message_text = call_args.args[0]
-        else:  # keyword аргументы
+        else:
             message_text = call_args.kwargs.get('text', '')
         
         assert "AI-ассистент активирован" in message_text
@@ -271,10 +271,10 @@ class TestAIBasicLogic:
     def test_question_validation(self):
         """Test question validation"""
         # Исправленная проверка: "Когда?" имеет длину 6 символов, что >= 3
-        assert len("а?".strip()) < 3  # слишком короткий (2 символа)
-        assert len("Когда?".strip()) >= 3  # нормальный (6 символов) - ИСПРАВЛЕНО
-        assert len("Когда хакатон?".strip()) >= 3  # нормальный
-        assert len("Какие темы?".strip()) >= 3  # нормальный
+        assert len("а?".strip()) < 3 
+        assert len("Когда?".strip()) >= 3 
+        assert len("Когда хакатон?".strip()) >= 3 
+        assert len("Какие темы?".strip()) >= 3
     
     def test_prompt_building(self):
         """Test prompt building"""
