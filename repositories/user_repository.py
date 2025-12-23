@@ -1,9 +1,3 @@
-# repositories/user_repository.py
-"""
-Репозиторий для работы с пользователями (Data Access Layer).
-Содержит низкоуровневые операции с БД.
-"""
-
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
@@ -13,7 +7,6 @@ from config.database import get_db
 
 
 class UserRepository:
-    """Репозиторий для работы с таблицей users."""
 
     def __init__(self): ...
 
@@ -35,6 +28,12 @@ class UserRepository:
     async def get_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         """Находит пользователя по Telegram ID."""
         stmt = select(User).where(User.telegram_id == telegram_id)
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def get_by_telegram_username(self, telegram_username: str) -> Optional[User]:
+        stmt = select(User).where(User.username == telegram_username)
         async with get_db() as session:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
@@ -101,14 +100,6 @@ class UserRepository:
             result = await session.execute(stmt)
             return result.scalars().all()
 
-    async def update_skills(self, user_id: int, skills: List[str]) -> bool:
-        """Обновляет навыки пользователя."""
-        return await self.update(user_id, skills=skills)
-
-    async def update_interests(self, user_id: int, interests: List[str]) -> bool:
-        """Обновляет интересы пользователя."""
-        return await self.update(user_id, interests=interests)
-
     async def join_team(self, user_id: int, team_id: int) -> bool:
         """Добавляет пользователя в команду."""
         return await self.update(
@@ -124,3 +115,63 @@ class UserRepository:
             team_id=None,
             participant_status=ParticipantStatus.LOOKING_FOR_TEAM
         )
+
+    async def update_profile(self, user_id: int, profile_text: str) -> bool:
+        """Обновляет анкету пользователя."""
+        return await self.update(
+            user_id, 
+            profile_text=profile_text,
+        )
+    
+    async def set_profile_active(self, user_id: int, active: bool) -> bool:
+        """Устанавливает активность анкеты."""
+        user = await self.get_by_id(user_id)
+        if not user:
+            return False
+        
+        if active and user.team_id:
+            return False
+        
+        if active and (not user.profile_text or not user.profile_text.strip()):
+            return False
+        
+        return await self.update(
+            user_id, 
+            profile_active=active,
+        )
+    
+    async def get_active_profiles(self, exclude_user_id: Optional[int] = None) -> List[User]:
+        """Возвращает активные анкеты участников."""
+        stmt = select(User).where(
+            User.role == UserRole.PARTICIPANT,
+            User.profile_active == True,
+            User.is_active == True,
+            User.team_id == None
+        )
+        
+        if exclude_user_id:
+            stmt = stmt.where(User.id != exclude_user_id)
+        
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
+    
+    async def get_random_active_profiles(self, limit: int = 5, exclude_user_id: Optional[int] = None) -> List[User]:
+        """Возвращает случайные активные анкеты."""
+        from sqlalchemy import func
+        
+        stmt = select(User).where(
+            User.role == UserRole.PARTICIPANT,
+            User.profile_active == True,
+            User.is_active == True,
+            User.team_id == None
+        )
+        
+        if exclude_user_id:
+            stmt = stmt.where(User.id != exclude_user_id)
+        
+        stmt = stmt.order_by(func.random()).limit(limit)
+        
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()

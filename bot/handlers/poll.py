@@ -1,5 +1,6 @@
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery, Poll, PollAnswer, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import BufferedInputFile
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -11,6 +12,9 @@ import json
 
 from .start import temp_users_storage
 from .menu import back_to_menu_keyboard
+
+from services.user_service import UserService
+from services.poll_service import PollService
 
 router = Router()
 
@@ -64,14 +68,14 @@ def format_results_for_organizer(poll_data: Dict) -> str:
 @router.callback_query(F.data == "admin_create_poll")
 async def admin_poll_menu(callback: CallbackQuery):
     """Меню управления опросами для организатора"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
     
-    user_data = temp_users_storage[user_id]
-    if user_data["role"] != "organizer":
+    if user.role != "organizer":
         await callback.answer("❌ Эта функция доступна только организаторам", show_alert=True)
         return
     
@@ -152,7 +156,7 @@ async def process_options(message: Message, state: FSMContext):
     
     await message.answer(
         f"📋 <b>Предпросмотр опроса</b>\n\n"
-        f"<b>Вопрос:</b> {await state.get_data('question')}\n\n"
+        f"<b>Вопрос:</b> {(await state.get_data())['question']}\n\n"
         f"<b>Варианты ответов:</b>\n{options_text}\n\n"
         f"Этот опрос будет отправлен всем участникам через Telegram Poll.",
         reply_markup=builder.as_markup(),
@@ -162,9 +166,10 @@ async def process_options(message: Message, state: FSMContext):
 @router.callback_query(F.data == "send_polls_to_all")
 async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bot: Bot):
     """Отправка опроса всем пользователям"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
@@ -179,18 +184,23 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
     # Генерируем уникальный ID для группы опросов
     poll_group_id = str(datetime.now().timestamp())
     
+    poll = await PollService().create_poll(
+        question, user.id, user.full_name, options,
+    )
+
     # Сохраняем метаданные опроса
     telegram_polls[poll_group_id] = {
         "question": question,
         "options": options,
         "creator_id": user_id,
-        "creator_name": temp_users_storage[user_id]["full_name"],
+        "creator_name": user.full_name,
         "created_at": datetime.now().isoformat(),
         "sent_count": 0,
         "voted_count": 0,
         "results": {str(i): 0 for i in range(len(options))},
         "user_votes": {}  # user_id -> option_index
     }
+
     
     poll_messages[poll_group_id] = {}
     
@@ -198,11 +208,11 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
     sent_count = 0
     failed_count = 0
     
-    for uid, user_data in temp_users_storage.items():
+    for user in await UserService().get_all():
         try:
             # Отправляем нативный опрос Telegram
             sent_poll = await bot.send_poll(
-                chat_id=int(uid),
+                chat_id=user.telegram_id,
                 question=question,
                 options=options,
                 is_anonymous=False,  # Не анонимный, чтобы видеть кто проголосовал
@@ -212,7 +222,9 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
             )
             
             # Сохраняем ID сообщения с опросом
-            poll_messages[poll_group_id][uid] = sent_poll.message_id
+            # DB HERE
+            # await PollRepository().create_poll_message(poll_group_id, user.id, sent_poll.message_id)
+            poll_messages[poll_group_id][user.telegram_id] = sent_poll.message_id
             sent_count += 1
             
             # Небольшая задержка, чтобы не превысить лимиты Telegram
@@ -248,6 +260,7 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
 async def handle_poll_answer(poll_answer: PollAnswer, bot: Bot):
     """Обработка ответов на опросы Telegram"""
     user_id = str(poll_answer.user.id)
+    print(poll_answer)
     
     # Находим, к какому опросу относится этот ответ
     for poll_group_id, poll_data in telegram_polls.items():
@@ -290,28 +303,30 @@ async def handle_poll_answer(poll_answer: PollAnswer, bot: Bot):
 @router.callback_query(F.data.startswith("collect_results:"))
 async def collect_poll_results(callback: CallbackQuery):
     """Сбор и отображение результатов опроса"""
-    user_id = str(callback.from_user.id)
-    poll_group_id = callback.data.split(":")[1]
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    poll_group_id = int(callback.data.split(":")[1])
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
-    poll_data = telegram_polls.get(poll_group_id)
-    if not poll_data:
+    poll = await PollService().get_poll(poll_group_id)
+    if not poll:
         await callback.answer("❌ Опрос не найден", show_alert=True)
         return
     
     # Форматируем результаты
-    results_text = format_results_for_organizer(poll_data)
-    
+    results_text = format_results_for_organizer(poll.to_dict())
+    stats = await PollService().get_poll_results(poll_group_id)
     # Добавляем статистику
     stats = (
         f"\n📈 <b>Статистика:</b>\n"
-        f"• Отправлено: {poll_data['sent_count']} пользователям\n"
-        f"• Проголосовало: {poll_data['voted_count']} человек\n"
-        f"• Процент участия: {poll_data['voted_count']/poll_data['sent_count']*100:.1f}%\n"
-        f"• Создан: {poll_data['created_at'][:16].replace('T', ' ')}"
+        # f"• Отправлено: {poll_data['sent_count']} пользователям\n"
+        f"• Проголосовало: {stats["total_votes"]} человек\n"
+        # f"• Процент участия: {(await PollService().get_participant_rate()):.1f}%\n"
+        f"• Создан: {poll.created_at.isoformat()[:16].replace('T', ' ')}"
     )
     
     builder = InlineKeyboardBuilder()
@@ -320,49 +335,57 @@ async def collect_poll_results(callback: CallbackQuery):
     builder.button(text="🔙 К списку опросов", callback_data="view_active_polls")
     builder.adjust(1)
     
-    await callback.message.edit_text(
-        results_text + stats,
-        reply_markup=builder.as_markup(),
-        parse_mode="HTML"
-    )
+    prev_res = callback.message.text.split("Проголосовало: ")[1][:5]
+    cur_res = stats.split("Проголосовало: ")[1][:5]
+
+    if prev_res != cur_res:
+        await callback.message.edit_text(
+            results_text + stats,
+            reply_markup=builder.as_markup(),
+            parse_mode="HTML"
+        )
     await callback.answer()
 
 @router.callback_query(F.data.startswith("export_results:"))
 async def export_poll_results(callback: CallbackQuery):
     """Экспорт результатов в текстовом виде"""
-    user_id = str(callback.from_user.id)
-    poll_group_id = callback.data.split(":")[1]
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    poll_group_id = int(callback.data.split(":")[1])
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
-    poll_data = telegram_polls.get(poll_group_id)
-    if not poll_data:
+    poll = await PollService().get_poll(poll_group_id)
+    if not poll:
         await callback.answer("❌ Опрос не найден", show_alert=True)
         return
+    stats = await PollService().get_poll_results(poll_group_id)
     
     # Создаем структуру для экспорта
     export_data = {
         "poll_id": poll_group_id,
-        "question": poll_data["question"],
-        "options": poll_data["options"],
-        "created_at": poll_data["created_at"],
+        "question": poll.question,
+        "options": poll.options,
+        "created_at": poll.created_at.isoformat(),
         "statistics": {
-            "sent_count": poll_data["sent_count"],
-            "voted_count": poll_data["voted_count"],
-            "participation_rate": poll_data["voted_count"] / poll_data["sent_count"] if poll_data["sent_count"] > 0 else 0
+            "voted_count": stats["total_votes"],
         },
-        "results": poll_data["results"],
-        "voted_users": list(poll_data["user_votes"].keys())
+        "results": stats["results"],
+        # "voted_users": list(poll_data["user_votes"].keys())
     }
     
     # Конвертируем в JSON
     json_text = json.dumps(export_data, ensure_ascii=False, indent=2)
-    
+    file = BufferedInputFile(
+        json_text.encode("utf-8"),
+        filename="poll_results.json"
+    )
     # Отправляем как текстовый файл
     await callback.message.answer_document(
-        document=("poll_results.json", json_text.encode()),
+        document=file,
         caption=f"📊 Результаты опроса\nID: {poll_group_id}"
     )
     
@@ -371,21 +394,22 @@ async def export_poll_results(callback: CallbackQuery):
 @router.callback_query(F.data == "view_active_polls")
 async def view_active_polls(callback: CallbackQuery):
     """Просмотр активных опросов"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage:
+    if not user:
         await callback.answer("❌ Сначала зарегистрируйтесь", show_alert=True)
         return
     
-    user_role = temp_users_storage[user_id]["role"]
+    user_role = user.role
     
     # Фильтруем опросы (для участников показываем только активные)
-    active_polls_list = []
-    for poll_id, poll_data in telegram_polls.items():
-        if user_role == "organizer" or poll_data.get("is_active", True):
-            active_polls_list.append((poll_id, poll_data))
+    polls = await PollService().get_polls_by_creator(user.id)
+    # for poll_id, poll_data in telegram_polls.items():
+    #     if user_role == "organizer" or poll_data.get("is_active", True):
+    #         active_polls_list.append((poll_id, poll_data))
     
-    if not active_polls_list:
+    if not polls:
         await callback.message.edit_text(
             "📭 <b>Активных опросов нет</b>",
             reply_markup=back_to_menu_keyboard(),
@@ -396,18 +420,18 @@ async def view_active_polls(callback: CallbackQuery):
     polls_text = "📊 <b>Активные опросы:</b>\n\n"
     builder = InlineKeyboardBuilder()
     
-    for poll_id, poll_data in active_polls_list[:10]:  # Ограничиваем 10 опросами
+    for poll in polls[:10]:  # Ограничиваем 10 опросами
         polls_text += (
-            f"• {poll_data['question'][:50]}...\n"
-            f"  👤 Создал: {poll_data['creator_name']}\n"
-            f"  🗳️ Проголосовало: {poll_data['voted_count']}/{poll_data['sent_count']}\n"
-            f"  🕐 {poll_data['created_at'][:10]}\n\n"
+            f"• {poll.question[:50]}...\n"
+            f"  👤 Создал: {poll.creator_name}\n"
+            # f"  🗳️ Проголосовало: {res.get("")}/{poll.sent_count}\n"
+            f"  🕐 {poll.created_at.isoformat()[:10]}\n\n"
         )
         
         if user_role == "organizer":
             builder.button(
-                text=f"📊 {poll_data['question'][:20]}...",
-                callback_data=f"collect_results:{poll_id}"
+                text=f"📊 {poll.question[:20]}...",
+                callback_data=f"collect_results:{poll.id}"
             )
     
     if user_role == "organizer":
@@ -431,13 +455,15 @@ async def view_active_polls(callback: CallbackQuery):
 @router.callback_query(F.data == "collect_results")
 async def collect_all_results(callback: CallbackQuery):
     """Меню сбора результатов"""
-    user_id = str(callback.from_user.id)
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    if user_id not in temp_users_storage or temp_users_storage[user_id]["role"] != "organizer":
+    if not user or user.role != "organizer":
         await callback.answer("❌ Доступ запрещен", show_alert=True)
         return
     
-    if not telegram_polls:
+    polls = await PollService().get_active_polls()
+    if not polls:
         await callback.message.edit_text(
             "📭 <b>Опросов еще нет</b>\n\n"
             "Создайте первый опрос, чтобы видеть результаты.",
@@ -448,10 +474,10 @@ async def collect_all_results(callback: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     
-    for poll_id, poll_data in list(telegram_polls.items())[:10]:
+    for poll in polls[:10]:
         builder.button(
-            text=f"📊 {poll_data['question'][:30]}...",
-            callback_data=f"collect_results:{poll_id}"
+            text=f"📊 {poll.question[:30]}...",
+            callback_data=f"collect_results:{poll.id}"
         )
     
     builder.button(text="🔙 Назад", callback_data="admin_create_poll")

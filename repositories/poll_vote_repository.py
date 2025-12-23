@@ -10,41 +10,47 @@ from typing import Optional, List, Dict, Any
 from models.poll_vote import PollVote
 from models.poll import Poll
 
+from config.database import get_db
+
 
 class PollVoteRepository:
     """Репозиторий для работы с таблицей poll_votes."""
 
-    def __init__(self, session: AsyncSession):
-        self.session = session
+    def __init__(self):
+        ...
 
     # ==================== CRUD ОПЕРАЦИИ ====================
 
     async def create(self, vote: PollVote) -> PollVote:
         """Создаёт новый голос."""
-        self.session.add(vote)
-        await self.session.commit()
-        await self.session.refresh(vote)
-        return vote
+        async with get_db() as session:
+            session.add(vote)
+            await session.commit()
+            await session.refresh(vote)
+            return vote
 
     async def get_by_id(self, vote_id: int) -> Optional[PollVote]:
         """Находит голос по ID."""
         stmt = select(PollVote).where(PollVote.id == vote_id)
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def update(self, vote_id: int, **kwargs) -> bool:
         """Обновляет данные голоса."""
         stmt = update(PollVote).where(PollVote.id == vote_id).values(**kwargs)
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
 
     async def delete(self, vote_id: int) -> bool:
         """Удаляет голос."""
         stmt = delete(PollVote).where(PollVote.id == vote_id)
-        result = await self.session.execute(stmt)
-        await self.session.commit()
-        return result.rowcount > 0
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
 
     # ==================== ПОИСК ГОЛОСОВ ====================
 
@@ -54,32 +60,37 @@ class PollVoteRepository:
             PollVote.user_id == user_id,
             PollVote.poll_id == poll_id
         )
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
 
     async def get_votes_by_poll(self, poll_id: int) -> List[PollVote]:
         """Возвращает все голоса в опросе."""
         stmt = select(PollVote).where(PollVote.poll_id == poll_id)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     async def get_votes_by_user(self, user_id: int) -> List[PollVote]:
         """Возвращает все голоса пользователя."""
         stmt = select(PollVote).where(PollVote.user_id == user_id)
-        result = await self.session.execute(stmt)
-        return result.scalars().all()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalars().all()
 
     async def get_votes_count_by_poll(self, poll_id: int) -> int:
         """Возвращает количество голосов в опросе."""
         stmt = select(func.count(PollVote.id)).where(PollVote.poll_id == poll_id)
-        result = await self.session.execute(stmt)
-        return result.scalar_one()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one()
 
     async def get_voters_by_poll(self, poll_id: int) -> List[int]:
         """Возвращает ID пользователей, проголосовавших в опросе."""
         stmt = select(PollVote.user_id).where(PollVote.poll_id == poll_id)
-        result = await self.session.execute(stmt)
-        return [row[0] for row in result.fetchall()]
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return [row[0] for row in result.fetchall()]
 
     # ==================== РЕЗУЛЬТАТЫ ОПРОСА ====================
 
@@ -93,9 +104,9 @@ class PollVoteRepository:
         ).group_by(
             PollVote.option_index
         )
-
-        result = await self.session.execute(stmt)
-        rows = result.fetchall()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            rows = result.fetchall()
 
         # Создаём словарь с результатами
         results_dict = {}
@@ -117,8 +128,9 @@ class PollVoteRepository:
             PollVote.option_index
         )
 
-        result = await self.session.execute(stmt)
-        rows = result.fetchall()
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            rows = result.fetchall()
 
         detailed_results = []
         for row in rows:
@@ -138,8 +150,9 @@ class PollVoteRepository:
             PollVote.user_id == user_id,
             PollVote.poll_id == poll_id
         )
-        result = await self.session.execute(stmt)
-        return result.scalar_one() > 0
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            return result.scalar_one() > 0
 
     async def get_user_vote_details(self, user_id: int, poll_id: int) -> Optional[Dict[str, Any]]:
         """Возвращает детали голоса пользователя."""
@@ -150,11 +163,12 @@ class PollVoteRepository:
 
         # Получаем информацию об опросе
         stmt = select(Poll).where(Poll.id == poll_id)
-        poll_result = await self.session.execute(stmt)
-        poll = poll_result.scalar_one_or_none()
+        async with get_db() as session:
+            poll_result = await session.execute(stmt)
+            poll = poll_result.scalar_one_or_none()
 
-        if not poll:
-            return None
+            if not poll:
+                return None
 
         return {
             "vote_id": vote.id,

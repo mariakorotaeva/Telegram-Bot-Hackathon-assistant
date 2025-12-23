@@ -6,23 +6,22 @@ from typing import List, Optional
 
 
 class TaskModel(Base):
-    """Модель задачи в базе данных"""
-    
+   
     __tablename__ = "tasks"
-    
+   
     id = Column(Integer, primary_key=True, autoincrement=True)
-    telegram_id = Column(String, nullable=False)  # ID задачи для быстрого поиска
+    telegram_id = Column(String, nullable=False)
     title = Column(String, nullable=False)
     description = Column(String, nullable=False)
-    assigned_to = Column(String, nullable=False)  # "all" или telegram_id волонтера
-    created_by = Column(String, nullable=False)  # telegram_id организатора
+    assigned_to = Column(String, nullable=False)
+    created_by = Column(String, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
-    completed_by = Column(JSON, default=list)  # Список telegram_id выполнивших
+    completed_by = Column(JSON, default=list)
     is_active = Column(Boolean, default=True)
-    
+   
     def __repr__(self):
         return f"Task(id={self.id}, title={self.title}, assigned_to={self.assigned_to})"
-    
+   
     def to_dict(self) -> dict:
         """Преобразовать объект задачи в словарь"""
         return {
@@ -39,8 +38,7 @@ class TaskModel(Base):
 
 
 class Task:
-    """Бизнес-модель задачи"""
-    
+   
     def __init__(
         self,
         telegram_id: str,
@@ -60,10 +58,10 @@ class Task:
         self.created_at = created_at or datetime.utcnow()
         self.completed_by = completed_by or []
         self.is_active = is_active
-    
+   
     @classmethod
     def from_model(cls, model: TaskModel) -> 'Task':
-        """Создать бизнес-модель из модели БД"""
+        """Создание бизнес-модель из модели БД"""
         return cls(
             telegram_id=model.telegram_id,
             title=model.title,
@@ -74,7 +72,7 @@ class Task:
             completed_by=model.completed_by,
             is_active=model.is_active
         )
-    
+   
     def to_model(self) -> TaskModel:
         """Преобразовать в модель БД"""
         return TaskModel(
@@ -87,7 +85,7 @@ class Task:
             completed_by=self.completed_by,
             is_active=self.is_active
         )
-    
+   
     def to_dict(self) -> dict:
         """Преобразовать в словарь"""
         return {
@@ -100,18 +98,19 @@ class Task:
             "completed_by": self.completed_by,
             "is_active": self.is_active
         }
-    
+   
     def mark_completed(self, volunteer_id: str) -> bool:
         """Пометить задачу как выполненную волонтером"""
         if volunteer_id not in self.completed_by:
             self.completed_by.append(volunteer_id)
             return True
         return False
-    
+   
     def is_completed_by(self, volunteer_id: str) -> bool:
         """Проверить, выполнена ли задача волонтером"""
         return volunteer_id in self.completed_by
-    
+   
     def is_assigned_to(self, volunteer_id: str) -> bool:
         """Проверить, назначена ли задача волонтеру"""
         return self.assigned_to == volunteer_id or self.assigned_to == "all"
+

@@ -173,13 +173,18 @@ class ScheduleService:
         if success:
             # Логируем изменения
             event = await self.schedule_repo.get_event_by_id(event_id)
+            changes = kwargs
+            if "start_time" in changes and isinstance(changes["start_time"], datetime):
+                changes["start_time"] = changes["start_time"].strftime("%Y-%m-%d %H:%M:%S")
+            if "end_time" in changes and isinstance(changes["end_time"], datetime):
+                changes["end_time"] = changes["end_time"].strftime("%Y-%m-%d %H:%M:%S")
             if event:
                 await self.schedule_repo.create_event_log(
                     EventLog(
                         event_id=event_id,
                         changed_by=None,  # Можно добавить user_id если есть
                         change_type=EventChangeType.UPDATED,
-                        changes=kwargs
+                        changes=changes
                     )
                 )
         
@@ -190,21 +195,19 @@ class ScheduleService:
         event = await self.schedule_repo.get_event_by_id(event_id)
         if not event:
             return False
-        
-        success = await self.schedule_repo.delete_event_hard(event_id)
-        
-        if success:
-            # Логируем удаление
-            await self.schedule_repo.create_event_log(
-                EventLog(
-                    event_id=event_id,
-                    changed_by=None,  # Можно добавить user_id если есть
-                    change_type=EventChangeType.DELETED,
-                    changes=event.to_dict()
-                )
+    
+        # Логируем удаление
+        await self.schedule_repo.create_event_log(
+            EventLog(
+                event_id=event_id,
+                changed_by=None,  # Можно добавить user_id если есть
+                change_type=EventChangeType.DELETED,
+                changes=event.to_dict(convert_datetimes=True)
             )
+        )
+        await self.schedule_repo.delete_event_hard(event_id)
         
-        return success
+        return True
 
     async def get_all_events(self) -> List[Dict[str, Any]]:
         """Возвращает все события."""
@@ -349,19 +352,20 @@ class ScheduleService:
     ):
         """Отправляет уведомления о новом событии."""
         # Получаем пользователей, которым нужно отправить уведомление
-        if "all" in event.visibility:
+        # if "all" in event.visibility:
+        #     print(event.visibility)
             # Временно: используем temp_users_storage
-            users = await UserService().get_all()
-            for user in users:
-                try:
-                    if event.is_visible_for_role(user.role):
-                        await bot.send_message(
-                            chat_id=int(user.telegram_id),
-                            text=f"📅 <b>Новое событие!</b>\n\n{self.format_event_for_display(event.to_dict(), user.timezone if user.timezone else 'UTC+3')}",
-                            parse_mode="HTML"
-                        )
-                except Exception as e:
-                    print(f"Error sending notification to {user.telegram_id}: {e}")
+        users = await UserService().get_all()
+        for user in users:
+            try:
+                if user.role in event.visibility or "all" in event.visibility:
+                    await bot.send_message(
+                        chat_id=int(user.telegram_id),
+                        text=f"📅 <b>Новое событие!</b>\n\n{self.format_event_for_display(event.to_dict(), user.timezone if user.timezone else 'UTC+3')}",
+                        parse_mode="HTML"
+                    )
+            except Exception as e:
+                print(f"Error sending notification to {user.telegram_id}: {e}")
 
     async def _notify_event_updated(
         self,
@@ -388,7 +392,7 @@ class ScheduleService:
         users = await UserService().get_all()
         for user in users:
             try:
-                if event.is_visible_for_role(user.role):
+                if user.role in event.visibility or "all" in event.visibility:
                     await bot.send_message(
                         chat_id=int(user.telegram_id),
                         text=f"📅 <b>Событие обновлено!</b>\n\n"
@@ -462,15 +466,15 @@ class ScheduleService:
             time_until = (event.start_time - now).total_seconds() / 60
             if 15 <= time_until <= 60:
                 # Отправляем напоминания
-                for user_id, user_data in temp_users_storage.items():
-                    if event.is_visible_for_role(user_data["role"]):
+                for user in await UserService().get_all():
+                    if user.role in event.visibility or "all" in event.visibility:
                         try:
                             await bot.send_message(
-                                chat_id=int(user_id),
+                                chat_id=int(user.telegram_id),
                                 text=f"🔔 <b>Напоминание о событии!</b>\n\n"
                                      f"Событие <b>{event.title}</b> начнется через {int(time_until)} минут\n"
                                      f"📍 {event.location if event.location else 'Место не указано'}",
                                 parse_mode="HTML"
                             )
                         except Exception as e:
-                            print(f"Error sending reminder to {user_id}: {e}")
+                            print(f"Error sending reminder to {user.telegram_id}: {e}")

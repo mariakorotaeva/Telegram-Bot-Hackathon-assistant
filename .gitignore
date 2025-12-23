@@ -1,5 +1,6 @@
 # DB
 postg/
+google_auth.json
 
 # Environment
 .env

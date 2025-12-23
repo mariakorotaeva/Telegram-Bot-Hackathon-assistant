@@ -6,6 +6,8 @@ from aiogram.fsm.context import FSMContext
 from services.user_service import UserService
 from .start import ROLES
 from .broadcast import BroadcastStates
+from datetime import datetime
+from bot.services.utils import parse_users_to_sheet
 
 router = Router()
 
@@ -19,7 +21,7 @@ def get_participant_menu():
     
     builder.button(text="📅 Расписание", callback_data="menu_schedule")
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
-    builder.button(text="👥 Поиск команды", callback_data="participant_team_search")
+    builder.button(text="👥 Команда", callback_data="participant_team_search")
     builder.button(text="❓ Частые вопросы", callback_data="participant_faq")
     builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
@@ -38,6 +40,8 @@ def get_organizer_menu():
     builder.button(text="🔔 Управление уведомлениями", callback_data="menu_notifications")
     builder.button(text="❓ Задать вопрос", callback_data="menu_ask_ai_question")
     builder.button(text="👤 Мой профиль", callback_data="menu_profile")
+    builder.button(text="💾 Выгрузить пользователей", callback_data="admin_parse_users")
+
     
     builder.adjust(2, 2, 2, 2)
     return builder.as_markup()
@@ -155,25 +159,25 @@ async def show_faq(callback: CallbackQuery):
     await callback.answer()
 
 
-@router.callback_query(F.data == "participant_team_search")
-async def team_search(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "👥 <b>Поиск команды</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+# @router.callback_query(F.data == "participant_team_search")
+# async def team_search(callback: CallbackQuery):
+#     await callback.message.edit_text(
+#         "👥 <b>Поиск команды</b>\n\n"
+#         "Заглушка",
+#         reply_markup=back_to_menu_keyboard(),
+#         parse_mode="HTML"
+#     )
+#     await callback.answer()
 
-@router.callback_query(F.data == "mentor_my_teams")
-async def mentor_my_teams(callback: CallbackQuery):
-    await callback.message.edit_text(
-        "📋 <b>Мои команды</b>\n\n"
-        "Заглушка",
-        reply_markup=back_to_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+# @router.callback_query(F.data == "mentor_my_teams")
+# async def mentor_my_teams(callback: CallbackQuery):
+#     await callback.message.edit_text(
+#         "📋 <b>Мои команды</b>\n\n"
+#         "Заглушка",
+#         reply_markup=back_to_menu_keyboard(),
+#         parse_mode="HTML"
+#     )
+#     await callback.answer()
 
 @router.callback_query(F.data == "back_to_menu")
 async def back_to_menu(callback: CallbackQuery):
@@ -186,3 +190,35 @@ async def back_to_menu(callback: CallbackQuery):
     
     await _show_menu(user_id, user.role, callback, is_callback=True)
     await callback.answer()
+
+
+@router.callback_query(F.data == "admin_parse_users")
+async def admin_parse_users(callback: CallbackQuery):
+    user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
+
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
+
+    if user.role != "organizer":
+        await callback.answer("❌ Команда доступна только организаторам", show_alert=True)
+        return
+
+    today = datetime.now()
+    filename = f"users-{today.strftime('%Y-%m-%d')}"
+    try:
+        url = await parse_users_to_sheet(filename)
+        await callback.message.edit_text(
+            f"📋 <b>Данные успешно выгружены, ссылка: </b>\n\n {url}",
+            reply_markup=back_to_menu_keyboard(),
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        print("Error while parsing users: {e}")
+        await callback.message.edit_text(
+            f"❌ Ошибка выгрузки таблицы пользователей.",
+            reply_markup=back_to_menu_keyboard(),
+            parse_mode="HTML"
+        )
+    

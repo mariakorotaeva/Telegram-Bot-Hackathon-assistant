@@ -501,7 +501,8 @@ async def process_edit_value(message: Message, state: FSMContext, bot: Bot):
             user_id = int(message.from_user.id)
             user = await UserService().get_by_tg_id(user_id)
             await message.answer(
-                f"✅ <b>{action_display} обновлено!</b>\n\n" + schedule_service.format_event_for_display(updated_event, user.timezone),
+                # schedule_service
+                f"✅ <b>{action_display} обновлено!</b>\n\n" + ScheduleService().format_event_for_display(updated_event, user.timezone),
                 reply_markup=get_edit_event_keyboard(event_id),
                 parse_mode="HTML"
             )
@@ -526,7 +527,7 @@ async def process_edit_value(message: Message, state: FSMContext, bot: Bot):
 @router.callback_query(F.data.startswith("delete_event:"))
 async def admin_delete_event(callback: CallbackQuery):
     event_id = int(callback.data.split(":")[1])
-    event = schedule_service.get_event_by_id(event_id)
+    event = await ScheduleService().get_event_by_id(event_id)
     if not event:
         await callback.answer("❌ Событие не найдено!", show_alert=True)
         return
@@ -544,10 +545,9 @@ async def admin_delete_event(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("confirm_delete:"))
 async def confirm_delete_event(callback: CallbackQuery, bot: Bot):
     event_id = int(callback.data.split(":")[1])
-    success = await schedule_service.delete_event_with_notification(
+    success = await ScheduleService().delete_event_with_notification(
         event_id=event_id,
-        bot=bot,
-        temp_users_storage=temp_users_storage
+        bot=bot
     )
     if success:
         await callback.message.edit_text(

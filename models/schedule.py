@@ -132,20 +132,20 @@ class Event(Base):
     def __repr__(self) -> str:
         return f"<Event(id={self.id}, title='{self.title}', start='{self.start_time}')>"
 
-    def to_dict(self, user_timezone: str = "UTC+3") -> Dict[str, Any]:
+    def to_dict(self, user_timezone: str = "UTC+3", convert_datetimes: bool = False) -> Dict[str, Any]:
         """Преобразует объект события в словарь."""
         return {
             "id": self.id,
             "title": self.title,
             "description": self.description,
-            "start_time": self.start_time,
-            "end_time": self.end_time,
+            "start_time": self.start_time.strftime("%Y-%m-%d %H:%M:%S") if convert_datetimes else self.start_time,
+            "end_time": self.end_time.strftime("%Y-%m-%d %H:%M:%S") if convert_datetimes else self.end_time,
             "location": self.location,
             "visibility": self.visibility,
             "created_by": self.created_by,
             "creator_timezone": self.creator_timezone,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
+            "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if convert_datetimes else self.created_at,
+            "updated_at": self.updated_at.strftime("%Y-%m-%d %H:%M:%S") if convert_datetimes else self.updated_at,
             "is_active": self.is_active
         }
 
