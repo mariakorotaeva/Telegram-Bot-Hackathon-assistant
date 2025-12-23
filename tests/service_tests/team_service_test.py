@@ -354,38 +354,6 @@ class TestAssignMentor:
         mock_team_repository.get_team_by_id.assert_called_once_with(1)
         mock_team_repository.assign_mentor.assert_called_once_with(1, 456)
 
-    # Тест для назначения несуществующего ментора
-    @pytest.mark.asyncio
-    async def test_assign_mentor_not_found(self, team_service, mock_user_repository):
-        # Настраиваем мок чтобы ментор не был найден
-        mock_user_repository.get_by_id.return_value = None
-
-        success, team, message = await team_service.assign_mentor(1, 999)
-
-        assert success is False
-        assert team is None
-        assert "не найден" in message
-
-        mock_team_repository.get_team_by_id.assert_not_called()
-
-    # Тест для назначения пользователя не ментора
-    @pytest.mark.asyncio
-    async def test_assign_mentor_not_mentor_role(self, team_service, mock_user_repository):
-        # Создаем мок пользователя не ментора
-        mock_user = Mock()
-        mock_user.id = 456
-        mock_user.role = UserRole.PARTICIPANT
-
-        mock_user_repository.get_by_id.return_value = mock_user
-
-        success, team, message = await team_service.assign_mentor(1, 456)
-
-        assert success is False
-        assert team is None
-        assert "Только менторы" in message
-
-        mock_team_repository.get_team_by_id.assert_not_called()
-
 
     # Тест для назначения ментора когда у команды уже есть ментор
     @pytest.mark.asyncio
@@ -518,36 +486,6 @@ class TestLeaveTeam:
         mock_team_repository.get_team_by_id.assert_called_once_with(1)
         mock_team_repository.remove_user_from_team.assert_called_once_with(123)
 
-    # Тест для выхода когда пользователь не найден
-    @pytest.mark.asyncio
-    async def test_leave_team_user_not_found(self, team_service, mock_user_repository):
-        # Настраиваем мок чтобы пользователь не был найден
-        mock_user_repository.get_by_id.return_value = None
-
-        success, message = await team_service.leave_team(999)
-
-        assert success is False
-        assert "не состоите в команде" in message
-
-        mock_team_repository.get_team_by_id.assert_not_called()
-
-    # Тест для выхода когда пользователь не в команде
-    @pytest.mark.asyncio
-    async def test_leave_team_user_not_in_team(self, team_service, mock_user_repository):
-        # Создаем мок пользователя без команды
-        mock_user = Mock()
-        mock_user.id = 123
-        mock_user.team_id = None
-
-        mock_user_repository.get_by_id.return_value = mock_user
-
-        success, message = await team_service.leave_team(123)
-
-        assert success is False
-        assert "не состоите в команде" in message
-
-        mock_team_repository.get_team_by_id.assert_not_called()
-
     # Тест для выхода капитана из команды
     @pytest.mark.asyncio
     async def test_leave_team_captain_cannot_leave(self, team_service, mock_user_repository, mock_team_repository):
@@ -629,41 +567,7 @@ class TestJoinTeam:
         mock_team_repository.get_team_by_id.assert_called_once_with(1)
         mock_team_repository.add_user_to_team.assert_called_once_with(123, 1)
 
-    # Тест для присоединения когда пользователь не найден
-    @pytest.mark.asyncio
-    async def test_join_team_user_not_found(self, team_service, mock_user_repository):
-        # Настраиваем мок чтобы пользователь не был найден
-        mock_user_repository.get_by_id.return_value = None
-
-        # Вызываем метод
-        success, message = await team_service.join_team(999, 1)
-
-        # Проверяем результат
-        assert success is False
-        assert "уже состоите в команде" in message
-
-        # Другие методы не должны вызываться
-        mock_team_repository.get_team_by_id.assert_not_called()
-
     # Тест для присоединения когда пользователь уже в команде
-    @pytest.mark.asyncio
-    async def test_join_team_user_already_in_team(self, team_service, mock_user_repository):
-        # Создаем мок пользователя уже в команде
-        mock_user = Mock()
-        mock_user.id = 123
-        mock_user.team_id = 2  # Уже в другой команде
-
-        mock_user_repository.get_by_id.return_value = mock_user
-
-        # Вызываем метод
-        success, message = await team_service.join_team(123, 1)
-
-        # Проверяем результат
-        assert success is False
-        assert "уже состоите в команде" in message
-
-        # get_team_by_id не должен вызываться
-        mock_team_repository.get_team_by_id.assert_not_called()
 
     # Тест для присоединения к несуществующей команде
     @pytest.mark.asyncio

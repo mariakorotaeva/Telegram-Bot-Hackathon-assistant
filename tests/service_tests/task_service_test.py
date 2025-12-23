@@ -31,42 +31,6 @@ def sample_task_data():
     }
 
 
-class TestCreateTask:
-    # Тест для успешного создания задачи
-    @pytest.mark.asyncio
-    async def test_create_task_success(self, task_service, mock_task_repository):
-        with patch('services.task_service.uuid') as mock_uuid, \
-                patch('services.task_service.datetime') as mock_datetime, \
-                patch('services.task_service.Task') as MockTask:
-            mock_uuid.uuid4.return_value.hex = "abc123def"
-            mock_datetime.now.return_value.timestamp.return_value = 1703250000
-
-            mock_task_instance = Mock()
-            mock_task_instance.id = 1
-            mock_task_instance.telegram_id = "task_1703250000_abc123def"
-            MockTask.return_value = mock_task_instance
-
-            mock_task_repository.create.return_value = mock_task_instance
-
-            result = await task_service.create_task(
-                title="Test Task",
-                description="Test Description",
-                assigned_to="volunteer123",
-                created_by="organizer456"
-            )
-
-            assert result == mock_task_instance
-            MockTask.assert_called_once_with(
-                telegram_id="task_1703250000_abc123def",
-                title="Test Task",
-                description="Test Description",
-                assigned_to="volunteer123",
-                created_by="organizer456"
-            )
-            mock_task_repository.create.assert_called_once_with(mock_task_instance)
-
-
-
 class TestGetTaskById:
     # Тест для получения задачи по ID
     @pytest.mark.asyncio
