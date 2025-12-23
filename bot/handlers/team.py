@@ -12,6 +12,7 @@ from services.user_service import UserService
 from services.team_service import TeamService
 from models.user import UserRole
 
+
 router = Router()
 
 def back_to_team_menu_keyboard():
@@ -56,7 +57,6 @@ async def team_search_main(callback: CallbackQuery):
         await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
         return
     
-    # Проверяем, есть ли у пользователя команда и является ли он капитаном
     team_service = TeamService()
     team = await team_service.get_user_team(user_id)
     is_captain = await team_service.is_user_captain(user_id) if team else False
@@ -75,18 +75,6 @@ async def team_search_main(callback: CallbackQuery):
     )
     await callback.answer()
 
-@router.callback_query(F.data == "team_profiles_stub")
-async def team_profiles_stub(callback: CallbackQuery):
-    """Заглушка для анкет"""
-    await callback.message.edit_text(
-        "📝 <b>Анкеты участников</b>\n\n"
-        "Эта функция находится в разработке. Скоро здесь появится возможность "
-        "просматривать анкеты других участников для поиска команды.",
-        reply_markup=back_to_team_menu_keyboard(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
-
 @router.callback_query(F.data == "team_menu")
 async def team_menu(callback: CallbackQuery):
     """Меню управления командой"""
@@ -94,22 +82,21 @@ async def team_menu(callback: CallbackQuery):
     user = await UserService().get_by_tg_id(user_id)
     
     team_service = TeamService()
-    team = await team_service.get_user_team(user_id)
-    is_captain = await team_service.is_user_captain(user_id) if team else False
+    team = await team_service.get_user_team(user.id)
+    is_captain = await team_service.is_user_captain(user.id) if team else False
     
     if team:
         if is_captain:
+            members = await team_service.team_repo.get_team_members(team.id)
             text = (
                 f"👥 <b>Управление командой</b>\n\n"
                 f"Название: <b>{team.name}</b>\n"
-                f"Участников: {team.member_count}/5\n\n"
+                f"Участников: {len(members)}\n\n"
                 f"Вы являетесь капитаном команды."
             )
         else:
-            # Получаем участников команды
             members = await team_service.team_repo.get_team_members(team.id)
             
-            # Формируем список участников
             members_list = []
             for member in members:
                 role = "👑 Капитан" if member.id == team.captain_id else "👤 Участник"
@@ -143,21 +130,23 @@ async def team_create(callback: CallbackQuery, state: FSMContext):
     """Создание команды"""
     user_id = int(callback.from_user.id)
     
-    # Сначала проверяем, может ли пользователь создать команду
     team_service = TeamService()
     
-    # Проверяем, есть ли уже команда у пользователя
-    existing_team = await team_service.get_user_team(user_id)
+    user = await UserService().get_by_tg_id(user_id)
+    if not user:
+        await callback.answer("❌ Сначала зарегистрируйтесь с помощью /start", show_alert=True)
+        return
+    
+    existing_team = await team_service.get_user_team(user.id)
     if existing_team:
         await callback.answer("❌ Вы уже состоите в команде!", show_alert=True)
         return
     
-    # Проверяем, является ли пользователь уже капитаном
-    if await team_service.is_user_captain(user_id):
+    if await team_service.is_user_captain(user.id):
         await callback.answer("❌ Вы уже являетесь капитаном команды!", show_alert=True)
         return
     
-    await state.update_data(creating_team=True)
+    await state.update_data(creating_team=True, user_telegram_id=user_id)
     
     builder = InlineKeyboardBuilder()
     builder.button(text="🔙 Назад", callback_data="team_menu")
@@ -176,45 +165,31 @@ async def process_team_name(message: Message, state: FSMContext):
     user_id = int(message.from_user.id)
     data = await state.get_data()
     
-    if not data.get('creating_team'):
-        return
-    
     team_name = message.text.strip()
-    
-    if len(team_name) < 2:
-        await message.answer(
-            "❌ Название команды должно содержать минимум 2 символа.\n"
-            "Пожалуйста, введите название еще раз:"
-        )
-        return
     
     if len(team_name) > 100:
         await message.answer(
-            "❌ Название команды слишком длинное (макс. 100 символов).\n"
-            "Пожалуйста, введите более короткое название:"
+            "❌ Название команды слишком длинное.\n"
         )
         return
     
-    # Создаем команду
     team_service = TeamService()
     success, team, message_text = await team_service.create_team(user_id, team_name)
     
     if success:
         await message.answer(
-            f"✅ {message_text}\n\n"
-            f"Теперь вы капитан команды <b>'{team_name}'</b>.\n"
-            f"Вы можете управлять командой через меню команды.",
+            f"✅ Команда создана!\n\n"
+            f"Теперь вы капитан команды <b>{team_name}</b>.\n",
             parse_mode="HTML"
         )
         
-        # Показываем меню команды
         builder = InlineKeyboardBuilder()
         builder.button(text="👥 Управление командой", callback_data="team_menu")
         builder.button(text="🔙 Назад в меню", callback_data="back_to_menu")
         builder.adjust(1)
         
         await message.answer(
-            "Что вы хотите сделать дальше?",
+            "ЭЭээ",
             reply_markup=builder.as_markup()
         )
     else:
@@ -278,10 +253,10 @@ async def team_view(callback: CallbackQuery):
 async def team_edit_name(callback: CallbackQuery, state: FSMContext):
     """Изменение названия команды"""
     user_id = int(callback.from_user.id)
+    user = await UserService().get_by_tg_id(user_id)
     
-    # Проверяем, является ли пользователь капитаном
     team_service = TeamService()
-    team = await team_service.team_repo.get_team_by_captain(user_id)
+    team = await team_service.team_repo.get_team_by_captain(user.id)
     
     if not team:
         await callback.answer("❌ Вы не являетесь капитаном команды!", show_alert=True)
@@ -308,7 +283,7 @@ async def team_manage_members(callback: CallbackQuery):
     
     # Проверяем, является ли пользователь капитаном
     team_service = TeamService()
-    team = await team_service.team_repo.get_team_by_captain(user_id)
+    team = await team_service.team_repo.get_team_by_captain(user.id)
     
     if not team:
         await callback.answer("❌ Вы не являетесь капитаном команды!", show_alert=True)
@@ -351,7 +326,7 @@ async def team_delete(callback: CallbackQuery):
     
     # Проверяем, является ли пользователь капитаном
     team_service = TeamService()
-    team = await team_service.team_repo.get_team_by_captain(user_id)
+    team = await team_service.team_repo.get_team_by_captain(user.id)
     
     if not team:
         await callback.answer("❌ Вы не являетесь капитаном команды!", show_alert=True)
