@@ -33,9 +33,13 @@ class TeamRepository:
             return result.scalar_one_or_none()
     
     async def get_user_team(self, user_id: int) -> Optional[Team]:
-        """Находит команду пользователя."""
-        stmt = select(Team).join(User).where(User.id == user_id)
+        """Находит команду пользователя"""
         async with get_db() as session:
+            stmt = (
+                select(Team)
+                .join(User, User.team_id == Team.id)
+                .where(User.id == user_id)
+            )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
     
