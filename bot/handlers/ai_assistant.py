@@ -146,6 +146,7 @@ async def show_ai_assistant(callback: CallbackQuery, state: FSMContext):
         return
     welcome_text = (
         f"🤖 <b>Я -Лама, AI Ассистент Хакатона</b>\n\n"
+        
         f"<b>Просто напишите ваш вопрос ниже!</b>"
     )
     
