@@ -1,4 +1,4 @@
-from models.poll import Poll
+from models.poll import Poll, PollMessage
 from models.task_model import TaskModel
 from models.team import Team
 from models.user import User, UserRole

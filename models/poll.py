@@ -162,3 +162,19 @@ class Poll(Base):
             text += "\n🚫 <i>Опрос закрыт</i>"
 
         return text
+
+class PollMessage(Base):
+    __tablename__ = "pollmsgs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    poll_id: Mapped[str] = mapped_column(
+        ForeignKey("polls.id", ondelete="CASCADE"), nullable=False)
+    tg_poll_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    poll: Mapped["Poll"] = relationship("Poll", foreign_keys=[poll_id])

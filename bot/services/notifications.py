@@ -142,7 +142,7 @@ async def schedule_reminder_checker(bot: Bot):
         except Exception as e:
             print(f"Error in reminder checker: {e}")
         
-        await asyncio.sleep(5)
+        await asyncio.sleep(20)
 
 async def notify_new_event(bot: Bot, event: Dict):
     all_users = await UserService().get_all()

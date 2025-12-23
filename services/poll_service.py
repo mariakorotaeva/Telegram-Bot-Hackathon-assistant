@@ -10,7 +10,8 @@ import uuid
 
 from repositories.poll_repository import PollRepository
 from repositories.poll_vote_repository import PollVoteRepository
-from models.poll import Poll
+from repositories.user_repository import UserRepository
+from models.poll import Poll, PollMessage
 from models.poll_vote import PollVote
 from models.user import User, UserRole
 
@@ -18,9 +19,10 @@ from models.user import User, UserRole
 class PollService:
     """Сервис для работы с опросами."""
 
-    def __init__(self, poll_repository: PollRepository, vote_repository: PollVoteRepository):
-        self.poll_repo = poll_repository
-        self.vote_repo = vote_repository
+    def __init__(self, poll_repository: PollRepository | None = None, vote_repository: PollVoteRepository | None = None):
+        self.poll_repo = poll_repository or PollRepository()
+        self.vote_repo = vote_repository or PollVoteRepository()
+        self.user_repo = UserRepository()
 
     # ==================== СОЗДАНИЕ И УПРАВЛЕНИЕ ОПРОСАМИ ====================
 
@@ -65,6 +67,13 @@ class PollService:
     async def update_poll(self, poll_id: int, **kwargs) -> bool:
         """Обновляет опрос."""
         return await self.poll_repo.update(poll_id, **kwargs)
+
+    async def create_poll_message(self, poll_id: int, user_id: int, poll_tg_id: str) -> Optional[PollMessage]:
+        poll = await self.poll_repo.get_by_id(poll_id)
+        user = await self.user_repo.get_by_id(user_id)
+        if user and poll:
+            return await self.poll_repo.create_poll_message(poll, user, poll_tg_id)
+        return None
 
     async def deactivate_poll(self, poll_id: int) -> bool:
         """Деактивирует опрос."""

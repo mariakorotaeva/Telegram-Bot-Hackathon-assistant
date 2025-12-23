@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 import uuid
 
-from models.poll import Poll
+from models.poll import Poll, PollMessage
 from models.poll_vote import PollVote
 from config.database import get_db
 
@@ -32,6 +32,15 @@ class PollRepository:
             session.add(poll)
             await session.commit()
             await session.refresh(poll)
+            return poll
+
+    async def create_poll_message(self, poll: Poll, user: User, poll_tg_id: str) -> PollMessage:
+        """Создаёт новый опрос."""
+        async with get_db() as session:
+            pm = PollMessage(poll_id=poll.id, user_id=user.id, poll_tg_id=poll_tg_id)
+            session.add(pm)
+            await session.commit()
+            await session.refresh(pm)
             return poll
 
     async def get_by_id(self, poll_id: int) -> Optional[Poll]:
