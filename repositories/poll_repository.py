@@ -12,6 +12,7 @@ import uuid
 from models.poll import Poll, PollMessage
 from models.poll_vote import PollVote
 from config.database import get_db
+from models.user import User
 
 
 class PollRepository:
