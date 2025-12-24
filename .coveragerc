@@ -1,0 +1,16 @@
+[run]
+source =
+    alembic
+    bot
+    config
+    models
+    repositories
+    services
+
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    raise AssertionError
+    raise NotImplementedError
