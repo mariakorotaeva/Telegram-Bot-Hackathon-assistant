@@ -227,7 +227,7 @@ async def send_polls_to_all_users(callback: CallbackQuery, state: FSMContext, bo
         f"<b>ID группы опросов:</b> <code>{poll_group_id}</code>\n\n"
         f"<i>Результаты будут автоматически собираться по мере голосования.</i>",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="📊 Собрать результаты", callback_data=f"collect_results:{poll_group_id}")],
+            # [InlineKeyboardButton(text="📊 Собрать результаты", callback_data=f"collect_results:{poll_group_id}")],
             [InlineKeyboardButton(text="🔙 В меню опросов", callback_data="admin_create_poll")]
         ]),
         parse_mode="HTML"
