@@ -457,19 +457,19 @@ async def team_delete_confirm(callback: CallbackQuery):
     )
     await callback.answer()
 
-@router.callback_query(F.data == "team_profiles_stub")
-async def profile_menu_view(callback: CallbackQuery):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="Моя анкета", callback_data=f"my_profile_view")
-    builder.button(text="Смотреть чужие анкеты", callback_data="other_profiles_view")
-    builder.adjust(1)
+# @router.callback_query(F.data == "team_profiles_stub")
+# async def profile_menu_view(callback: CallbackQuery):
+#     builder = InlineKeyboardBuilder()
+#     builder.button(text="Моя анкета", callback_data=f"my_profile_view")
+#     builder.button(text="Смотреть чужие анкеты", callback_data="other_profiles_view")
+#     builder.adjust(1)
     
-    await callback.message.edit_text(
-        f"🗑️ <b>Удаление команды</b>\n\n"
-        f"Вы уверены, что хотите удалить команду <b>'{team.name}'</b>?\n\n"
-        f"⚠️ <b>Внимание:</b> Это действие нельзя отменить. "
-        f"Все участники команды будут удалены из неё.",
-        reply_markup=builder.as_markup(),
-        parse_mode="HTML"
-    )
-    await callback.answer()
+#     await callback.message.edit_text(
+#         f"🗑️ <b>Удаление команды</b>\n\n"
+#         f"Вы уверены, что хотите удалить команду <b>'{team.name}'</b>?\n\n"
+#         f"⚠️ <b>Внимание:</b> Это действие нельзя отменить. "
+#         f"Все участники команды будут удалены из неё.",
+#         reply_markup=builder.as_markup(),
+#         parse_mode="HTML"
+#     )
+#     await callback.answer()

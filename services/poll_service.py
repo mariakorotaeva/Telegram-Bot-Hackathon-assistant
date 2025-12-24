@@ -75,6 +75,9 @@ class PollService:
             return await self.poll_repo.create_poll_message(poll, user, poll_tg_id)
         return None
 
+    async def get_poll_by_message(self, user_id: int, tg_poll_id: str) -> Optional[Poll]:
+        return await self.poll_repo.get_poll_by_message(user_id, tg_poll_id)
+
     async def deactivate_poll(self, poll_id: int) -> bool:
         """Деактивирует опрос."""
         return await self.poll_repo.deactivate(poll_id)
@@ -181,6 +184,41 @@ class PollService:
             "option_index": option_index,
             "option_text": poll.options[option_index],
             "total_votes": poll.total_votes + (0 if existing_vote else 1),
+            "results": results
+        }
+
+    async def unvote_in_poll(
+        self,
+        poll_id: int,
+        user_id: int
+    ) -> Dict[str, Any]:
+        poll = await self.get_poll(poll_id)
+        if not poll:
+            return {"success": False, "error": "Опрос не найден"}
+
+        # Проверяем, можно ли голосовать
+        if not poll.can_vote():
+            return {"success": False, "error": "Опрос закрыт или истек срок"}
+
+
+        existing_vote = await self.vote_repo.get_vote_by_user_and_poll(user_id, poll_id)
+
+        if existing_vote:
+            # Обновляем существующий голос
+            await self.vote_repo.delete(existing_vote.id)
+            await self.poll_repo.update(poll_id, total_votes=poll.total_votes - 1)
+        else:
+            return {
+                "success": False,
+                "error": "Вы ещё не голосовали в этом опросе"
+            }
+
+        results = await self.vote_repo.get_poll_results(poll_id)
+
+        return {
+            "success": True,
+            "poll_id": poll.id,
+            "total_votes": poll.total_votes - (0 if existing_vote else 1),
             "results": results
         }
 

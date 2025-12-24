@@ -39,11 +39,21 @@ class PollRepository:
     async def create_poll_message(self, poll: Poll, user: User, poll_tg_id: str) -> PollMessage:
         """Создаёт новый опрос."""
         async with get_db() as session:
-            pm = PollMessage(poll_id=poll.id, user_id=user.id, poll_tg_id=poll_tg_id)
+            pm = PollMessage(poll_id=poll.id, user_id=user.id, tg_poll_id=poll_tg_id)
             session.add(pm)
             await session.commit()
             await session.refresh(pm)
             return poll
+
+    async def get_poll_by_message(self, user_id: int, poll_tg_id: str) -> Optional[Poll]:
+        stmt = select(PollMessage).where(PollMessage.user_id==user_id, PollMessage.tg_poll_id==poll_tg_id)
+        async with get_db() as session:
+            result = await session.execute(stmt)
+            pm = result.scalar_one_or_none()
+            if pm:
+                return await self.get_by_id(pm.poll_id)
+        return None
+
 
     async def get_by_id(self, poll_id: int) -> Optional[Poll]:
         """Находит опрос по ID."""
