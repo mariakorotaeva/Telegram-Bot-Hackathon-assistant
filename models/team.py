@@ -43,9 +43,6 @@ class Team(Base):
         foreign_keys="[User.team_id]"
     )
     
-    # def __repr__(self) -> str:
-    #     return f"<Team(id={self.id}, name='{self.name}', captain_id={self.captain_id})>"
-    
     @property
     def member_count(self) -> int:
         """Количество участников в команде."""
