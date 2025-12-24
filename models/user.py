@@ -63,7 +63,7 @@ class User(Base):
     team: Mapped[Optional["Team"]] = relationship(
             "Team",
             back_populates="members",
-            foreign_keys="[User.team_id]"  # ← ВАЖНО!
+            foreign_keys="[User.team_id]"
     )
 
     captained_teams: Mapped[List["Team"]] = relationship(
@@ -77,42 +77,6 @@ class User(Base):
         foreign_keys="[Team.mentor_id]",
         back_populates="mentor"
     )
-
-    #НЕЧТО ДЛЯ "УДОБСТВА", ХОЧЕТСЯ УДАЛИТЬ
-
-    # def __repr__(self) -> str:
-    #     return f"<User(id={self.id}, telegram_id={self.telegram_id}, name='{self.full_name}')>"
-
-    # def to_dict(self) -> dict:
-    #     return {
-    #         # Основные данные
-    #         "id": self.id,
-    #         "telegram_id": self.telegram_id,
-    #         "username": self.username,
-    #         "full_name": self.full_name,
-    #         "role": self.role.value,
-
-    #         # Контактная информация
-    #         "email": self.email,
-    #         "phone": self.phone,
-    #         "telegram_username": self.telegram_username,
-
-    #         # Анкета участника
-    #         "desired_role": self.desired_role,
-    #         "skills": self.skills or [],  # Если None, возвращаем пустой список
-    #         "interests": self.interests or [],
-    #         "experience": self.experience,
-    #         "bio": self.bio,
-
-    #         # Статус
-    #         "participant_status": self.participant_status.value if self.participant_status else None,
-    #         "team_id": self.team_id,
-
-    #         # Метаданные
-    #         "timezone": self.timezone,
-    #         "is_active": self.is_active,
-    #         "registered_at": self.registered_at.isoformat() if self.registered_at else None
-    #     }
 
     #МЕТОДЫ ДЛЯ ПОИСКА КОМАНДЫ
 
@@ -138,21 +102,9 @@ class User(Base):
         self.participant_status = ParticipantStatus.LOOKING_FOR_TEAM
         self.team_id = None
 
-    #ЧТО ЭТО????
-
     @classmethod
     def create_participant(cls, telegram_id: int, full_name: str, username: Optional[str] = None) -> "User":
-        """
-        Создаёт нового участника (фабричный метод).
-
-        Args:
-            telegram_id: ID пользователя в Telegram
-            full_name: Полное имя
-            username: Имя пользователя в Telegram (опционально)
-
-        Returns:
-            Новый объект User с ролью PARTICIPANT
-        """
+        """Создаёт нового участника"""
         return cls(
             telegram_id=telegram_id,
             username=username,
@@ -198,17 +150,6 @@ class User(Base):
             
         self.profile_active = active
         return True
-    
-    # def get_profile_preview(self, max_length: int = 100) -> str:
-    #     """Возвращает превью анкеты."""
-    #     if self.is_profile_empty():
-    #         return "Анкета пустая"
-        
-    #     text = self.profile_text.strip()
-    #     if len(text) <= max_length:
-    #         return text
-        
-    #     return text[:max_length] + "..."
     
     def get_full_profile(self) -> str:
         """Возвращает полную анкету."""

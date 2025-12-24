@@ -13,79 +13,45 @@ from config.database import Base
 
 
 class Poll(Base):
-    """
-    Модель опроса.
-    Организаторы создают опросы, участники голосуют.
-    """
 
     __tablename__ = "polls"
 
-    # ==================== ОСНОВНЫЕ ДАННЫЕ ====================
+    #ОСНОВНОЕ
 
     id: Mapped[int] = mapped_column(primary_key=True)
-
-    # Внутренний ID опроса (можно использовать для ссылок)
     poll_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-
-    # Текст вопроса
     question: Mapped[str] = mapped_column(Text, nullable=False)
-
-    # ==================== СОЗДАТЕЛЬ И ВРЕМЯ ====================
-
-    # Кто создал опрос (ссылка на users.id)
     creator_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False
     )
-
-    # Имя создателя (для быстрого доступа)
     creator_name: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    # Дата создания
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-    # Активен ли опрос (можно закрывать)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    # ==================== ВАРИАНТЫ ОТВЕТОВ ====================
+    #ВАРИАНТЫ ОТВЕТОВ
 
-    # Варианты ответов храним в JSON
-    # Формат: ["Вариант 1", "Вариант 2", "Вариант 3"]
     options: Mapped[List[str]] = mapped_column(JSON, nullable=False)
-
-    # Общее количество голосов (для быстрого доступа)
     total_votes: Mapped[int] = mapped_column(Integer, default=0)
 
-    # ==================== ДОПОЛНИТЕЛЬНЫЕ НАСТРОЙК ====================
+    #ДОП НАСТРОЙКИ
 
-    # Анонимный ли опрос (не показывать кто как проголосовал)
     is_anonymous: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    # Можно ли менять голос
     allow_multiple_votes: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    # Показывать ли результаты сразу
     show_results_immediately: Mapped[bool] = mapped_column(Boolean, default=True)
-
-    # Категория опроса (общий, для команды, для трека и т.д.)
     category: Mapped[Optional[str]] = mapped_column(String(100))
-
-    # Дата окончания опроса (если есть)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
-    # ==================== СВЯЗИ ====================
+    #СВЯЗИ
 
-    # Создатель опроса
     creator: Mapped["User"] = relationship("User", foreign_keys=[creator_id])
-
-    # Голоса в этом опросе
     votes: Mapped[List["PollVote"]] = relationship(
         "PollVote",
         back_populates="poll",
         cascade="all, delete-orphan"
     )
 
-    # ==================== МЕТОДЫ ====================
+    #МЕТОДЫ
 
     def __repr__(self) -> str:
         return f"<Poll(id={self.id}, question='{self.question[:30]}...', votes={self.total_votes})>"
@@ -110,10 +76,6 @@ class Poll(Base):
         }
 
     def get_results(self) -> Dict[int, int]:
-        """
-        Возвращает результаты опроса.
-        Формат: {индекс_варианта: количество_голосов}
-        """
         results = {i: 0 for i in range(len(self.options))}
 
         for vote in self.votes:
@@ -146,7 +108,6 @@ class Poll(Base):
                 votes = results.get(i, 0)
                 percentage = (votes / total) * 100 if total > 0 else 0
 
-                # Создаем прогресс-бар
                 bar_length = 20
                 filled = int(percentage / 100 * bar_length)
                 progress_bar = "█" * filled + "░" * (bar_length - filled)

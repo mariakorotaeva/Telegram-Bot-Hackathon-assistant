@@ -25,7 +25,6 @@ class KnowledgeBaseHandler:
             with open(faq_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 
-            # Преобразуем в плоский список
             faq_list = []
             for category, items in data.items():
                 for item in items:
@@ -72,12 +71,10 @@ class KnowledgeBaseHandler:
         question_lower = question.lower()
         words = set(re.findall(r'\w+', question_lower))
         
-        # Считаем релевантность
         scored_items = []
         for item in self.faq_data:
             score = 0
             
-            # Проверяем вопрос
             item_question = item.get('question', '').lower()
             item_answer = item.get('answer', '').lower()
             
@@ -95,10 +92,8 @@ class KnowledgeBaseHandler:
                     'category': item.get('category', 'general')
                 })
         
-        # Сортируем по релевантности
         scored_items.sort(key=lambda x: x['score'], reverse=True)
         
-        # Форматируем результат
         if not scored_items:
             return ""
         
@@ -114,8 +109,7 @@ class KnowledgeBaseHandler:
         """Возвращает краткое расписание"""
         if not self.schedule_data:
             return "Расписание не загружено."
-        
-        # Извлекаем только основные события
+    
         lines = self.schedule_data.split('\n')
         schedule_lines = []
         for line in lines:
